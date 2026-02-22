@@ -2,7 +2,7 @@ import { Feather, Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import { Audio } from 'expo-av';
 import * as Notifications from 'expo-notifications';
 import { useRouter } from 'expo-router'; // Added for Logout Navigation
-import { signOut } from 'firebase/auth'; // Added for Logout
+import { EmailAuthProvider, reauthenticateWithCredential, signOut, updatePassword } from 'firebase/auth'; // Added for Logout
 import { limitToLast, onValue, orderByChild, push, query, ref, remove, update } from "firebase/database";
 import React, { useEffect, useRef, useState } from "react";
 import {
@@ -39,7 +39,7 @@ import {
   useFonts
 } from '@expo-google-fonts/poppins';
 
-import { doc, getDoc } from 'firebase/firestore'; // <-- Add this line
+import { doc, getDoc, updateDoc } from 'firebase/firestore'; // <-- Add this line
 import { auth, db, rtdb } from "../firebaseConfig"; // <-- Make sure 'db' is included here
 
 LogBox.ignoreLogs(['Virtual Log', 'Text string must be rendered']);
@@ -500,7 +500,8 @@ function HistoryScreen() {
     });
   }, [timeframe]);
 
-  const renderHeader = () => (
+  const renderHeader = () => {
+    return (
      <View style={{ marginBottom: 20 }}>
         <Text style={styles.screenTitle}>ANALYTICS</Text>
         
@@ -543,7 +544,8 @@ function HistoryScreen() {
         </View>
         <Text style={styles.sectionHeader}>RECENT ACTIVITY</Text>
      </View>
-  );
+    );
+  };
 
   return (
     <View style={styles.screenContainer}>
@@ -559,7 +561,10 @@ function HistoryScreen() {
                       </Text>
                     )}
                     <Text style={{ fontSize: 12, color: THEME.primaryRed, marginTop: 4 }}>
-                      {new Date(item.timestamp).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true })}
+                      {timeframe === 'daily' 
+                        ? new Date(item.timestamp).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })
+                        : new Date(item.timestamp).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true })
+                      }
                     </Text>
                 </View>
             )}
@@ -713,6 +718,14 @@ function SettingsScreen() {
     
     // State to hold the fetched name
     const [userName, setUserName] = useState("Loading...");
+    const [isEditModalVisible, setEditModalVisible] = useState(false);
+    const [editName, setEditName] = useState('');
+    const [editError, setEditError] = useState(false);
+    const [isPasswordModalVisible, setPasswordModalVisible] = useState(false);
+    const [currentPassword, setCurrentPassword] = useState('');
+    const [newPassword, setNewPassword] = useState('');
+    const [confirmPassword, setConfirmPassword] = useState('');
+    const [passwordErrors, setPasswordErrors] = useState({ current: false, new: false, confirm: false });
     const currentUserEmail = auth.currentUser?.email || "user@gasolve.com";
 
     // Fetch the user's name from Firestore
@@ -740,6 +753,79 @@ function SettingsScreen() {
         fetchUserData();
     }, []);
 
+    const handleOpenEditModal = () => {
+        setEditName(userName);
+        setEditError(false);
+        setEditModalVisible(true);
+    };
+
+    const handleOpenPasswordModal = () => {
+        setCurrentPassword('');
+        setNewPassword('');
+        setConfirmPassword('');
+        setPasswordErrors({ current: false, new: false, confirm: false });
+        setPasswordModalVisible(true);
+    };
+
+    const handleChangePassword = async () => {
+        let errors = { current: false, new: false, confirm: false };
+        let hasError = false;
+
+        if (!currentPassword.trim()) { errors.current = true; hasError = true; }
+        if (!newPassword.trim() || newPassword.length < 6) { errors.new = true; hasError = true; }
+        if (!confirmPassword.trim() || confirmPassword !== newPassword) { errors.confirm = true; hasError = true; }
+
+        setPasswordErrors(errors);
+        if (hasError) { Vibration.vibrate(); return; }
+
+        try {
+            if (auth.currentUser && auth.currentUser.email) {
+                // Re-authenticate user with current password
+                const credential = EmailAuthProvider.credential(auth.currentUser.email, currentPassword);
+                await reauthenticateWithCredential(auth.currentUser, credential);
+
+                // Update password
+                await updatePassword(auth.currentUser, newPassword);
+                setPasswordModalVisible(false);
+                setCurrentPassword('');
+                setNewPassword('');
+                setConfirmPassword('');
+                Alert.alert("Success", "Password changed successfully!");
+            }
+        } catch (error: any) {
+            console.error("Error changing password:", error);
+            if (error.code === 'auth/wrong-password') {
+                Alert.alert("Error", "Current password is incorrect.");
+            } else if (error.code === 'auth/weak-password') {
+                Alert.alert("Error", "Password is too weak. Please use at least 6 characters.");
+            } else {
+                Alert.alert("Error", "Failed to change password. Please try again.");
+            }
+        }
+    };
+
+    const handleSaveName = async () => {
+        if (!editName.trim()) {
+            setEditError(true);
+            Vibration.vibrate();
+            return;
+        }
+
+        try {
+            if (auth.currentUser) {
+                const userDocRef = doc(db, "users", auth.currentUser.uid);
+                await updateDoc(userDocRef, { fullName: editName });
+                setUserName(editName);
+                setEditModalVisible(false);
+                setEditError(false);
+                Alert.alert("Success", "Profile updated successfully!");
+            }
+        } catch (error) {
+            console.error("Error updating profile:", error);
+            Alert.alert("Error", "Failed to update profile. Please try again.");
+        }
+    };
+
     const handleLogout = () => {
         Alert.alert(
             "Log Out",
@@ -765,24 +851,103 @@ function SettingsScreen() {
     return (
         <View style={styles.screenContainer}>
             <SimpleHeader />
-            <View style={{padding: 24}}>
+            <ScrollView contentContainerStyle={{padding: 24, paddingBottom: 100}}>
                 <Text style={styles.screenTitle}>SETTINGS</Text>
-                <TouchableOpacity style={{flexDirection:'row', alignItems:'center', marginBottom:20}}>
+                <TouchableOpacity onPress={handleOpenEditModal} style={{flexDirection:'row', alignItems:'center', marginBottom:20}}>
                     <Ionicons name="person-circle" size={100} color={THEME.primaryRed} />
-                    <View style={{marginLeft:10}}>
-                        {/* Replace the hardcoded "Homeowner" with the dynamic userName state */}
+                    <View style={{marginLeft:10, flex:1}}>
                         <Text style={{fontSize:20, fontFamily:'Poppins_700Bold', color: THEME.primaryRed}}>
                             {userName}
                         </Text>
                         <Text style={{fontSize:13, fontFamily:'Poppins_600SemiBold', color:THEME.darkGray}}>
                             {currentUserEmail}
                         </Text>
+                        <View style={{flexDirection:'row', alignItems:'center', marginTop:8}}>
+                            <Feather name="edit-2" size={14} color={THEME.primaryRed} />
+                            <Text style={{fontSize:12, color:THEME.primaryRed, fontFamily:'Poppins_600SemiBold', marginLeft:4}}>Edit Profile</Text>
+                        </View>
                     </View>    
+                </TouchableOpacity>
+                <TouchableOpacity style={[styles.logoutBtnNew, {backgroundColor: THEME.editBlue, marginBottom: 12}]} onPress={handleOpenPasswordModal}>
+                    <Text style={{fontSize:15, color:'white', fontFamily:'Poppins_700Bold', fontWeight:'bold'}}>Change Password</Text>
                 </TouchableOpacity>
                 <TouchableOpacity style={styles.logoutBtnNew} onPress={handleLogout}>
                     <Text style={{fontSize:15, color:'white', fontFamily:'Poppins_700Bold', fontWeight:'bold'}}>Log Out</Text>
                 </TouchableOpacity>
-            </View>
+            </ScrollView>
+
+            <Modal visible={isEditModalVisible} animationType="slide" transparent={true}>
+                <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
+                <View style={styles.modalOverlay}>
+                    <View style={styles.addMemberModalContent}>
+                        <View style={{flexDirection:'row', justifyContent:'space-between', marginBottom:20}}>
+                            <Text style={styles.modalTitle}>Edit Profile</Text>
+                            <TouchableOpacity onPress={() => setEditModalVisible(false)}><Feather name="x" size={24} color={THEME.darkGray} /></TouchableOpacity>
+                        </View>
+
+                        <Text style={styles.label}>Full Name <Text style={{color:'red'}}>*</Text></Text>
+                        <TextInput 
+                            style={[styles.textInput, editError && styles.errorBorder]} 
+                            value={editName} 
+                            onChangeText={(t) => {setEditName(t); if(t) setEditError(false);}} 
+                            placeholder="Enter your full name" 
+                        />
+                        {editError && <Text style={styles.errorText}>Name is required</Text>}
+
+                        <TouchableOpacity style={styles.continueBtn} onPress={handleSaveName}>
+                            <Text style={{color:'white', fontFamily:'Poppins_700Bold'}}>SAVE</Text>
+                        </TouchableOpacity>
+                    </View>
+                </View>
+                </TouchableWithoutFeedback>
+            </Modal>
+
+            <Modal visible={isPasswordModalVisible} animationType="slide" transparent={true}>
+                <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
+                <View style={styles.modalOverlay}>
+                    <View style={styles.addMemberModalContent}>
+                        <View style={{flexDirection:'row', justifyContent:'space-between', marginBottom:20}}>
+                            <Text style={styles.modalTitle}>Change Password</Text>
+                            <TouchableOpacity onPress={() => setPasswordModalVisible(false)}><Feather name="x" size={24} color={THEME.darkGray} /></TouchableOpacity>
+                        </View>
+
+                        <Text style={styles.label}>Current Password <Text style={{color:'red'}}>*</Text></Text>
+                        <TextInput 
+                            style={[styles.textInput, passwordErrors.current && styles.errorBorder]} 
+                            value={currentPassword} 
+                            onChangeText={(t) => {setCurrentPassword(t); if(t) setPasswordErrors({...passwordErrors, current:false});}} 
+                            placeholder="Enter current password"
+                            secureTextEntry
+                        />
+                        {passwordErrors.current && <Text style={styles.errorText}>Current password is required</Text>}
+
+                        <Text style={[styles.label, {marginTop:10}]}>New Password <Text style={{color:'red'}}>*</Text></Text>
+                        <TextInput 
+                            style={[styles.textInput, passwordErrors.new && styles.errorBorder]} 
+                            value={newPassword} 
+                            onChangeText={(t) => {setNewPassword(t); if(t && t.length >= 6) setPasswordErrors({...passwordErrors, new:false});}} 
+                            placeholder="Enter new password (min 6 characters)"
+                            secureTextEntry
+                        />
+                        {passwordErrors.new && <Text style={styles.errorText}>{newPassword.length > 0 && newPassword.length < 6 ? "Password must be at least 6 characters" : "New password is required"}</Text>}
+
+                        <Text style={[styles.label, {marginTop:10}]}>Confirm Password <Text style={{color:'red'}}>*</Text></Text>
+                        <TextInput 
+                            style={[styles.textInput, passwordErrors.confirm && styles.errorBorder]} 
+                            value={confirmPassword} 
+                            onChangeText={(t) => {setConfirmPassword(t); if(t && t === newPassword) setPasswordErrors({...passwordErrors, confirm:false});}} 
+                            placeholder="Confirm new password"
+                            secureTextEntry
+                        />
+                        {passwordErrors.confirm && <Text style={styles.errorText}>{confirmPassword.length > 0 && confirmPassword !== newPassword ? "Passwords do not match" : "Please confirm password"}</Text>}
+
+                        <TouchableOpacity style={styles.continueBtn} onPress={handleChangePassword}>
+                            <Text style={{color:'white', fontFamily:'Poppins_700Bold'}}>CHANGE PASSWORD</Text>
+                        </TouchableOpacity>
+                    </View>
+                </View>
+                </TouchableWithoutFeedback>
+            </Modal>
         </View>
     );
 }
