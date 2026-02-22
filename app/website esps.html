@@ -1,0 +1,713 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Espiritu Santo - FAQ</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        html, body {
+            width: 100%;
+            overflow-x: hidden;
+            min-height: 100vh;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #f5f5f5;
+            margin: 0;
+            padding: 0;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .page-wrapper {
+            flex: 1;
+        }
+
+        header {
+            background-color: white;
+            padding: 15px 50px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .logo {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            font-size: 18px;
+            color: #5c1a1a;
+            font-weight: bold;
+        }
+
+        .logo img {
+            width: 50px;
+            height: 50px;
+        }
+
+        nav {
+            display: flex;
+            gap: 30px;
+            align-items: center;
+        }
+
+        nav a {
+            text-decoration: none;
+            color: #666;
+            font-size: 16px;
+            transition: color 0.3s;
+        }
+
+        nav a:hover {
+            color: #5c1a1a;
+        }
+
+        .nav-buttons {
+            display: flex;
+            gap: 10px;
+        }
+
+        .btn {
+            padding: 10px 20px;
+            border: none;
+            cursor: pointer;
+            font-size: 14px;
+            border-radius: 4px;
+            text-decoration: none;
+            display: inline-block;
+        }
+
+        .btn-maroon {
+            background-color: #5c1a1a;
+            color: white;
+        }
+
+        .btn-gray {
+            background-color: #7d8590;
+            color: white;
+        }
+
+        .btn-yellow {
+            background-color: #ffc107;
+            color: #333;
+        }
+
+        .hero {
+            text-align: center;
+            padding: 60px 20px 20px;
+            background-color: white;
+        }
+
+        .hero h1 {
+            font-size: 42px;
+            color: #333;
+            margin-bottom: 20px;
+        }
+
+        .hero p {
+            font-size: 24px;
+            color: #666;
+            margin-bottom: 30px;
+        }
+
+        .faq-header {
+            background-color: #5c1a1a;
+            color: white;
+            text-align: center;
+            padding: 20px;
+            font-size: 24px;
+            max-width: 1400px;
+            margin: 0 auto 40px;
+        }
+
+        .main-content {
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 20px;
+            display: grid;
+            grid-template-columns: 450px 1fr;
+            gap: 40px;
+            align-items: start;
+        }
+
+        .faq-container {
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+        }
+
+        .faq-item {
+            background-color: white;
+            border-radius: 8px;
+            overflow: hidden;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+        }
+
+        .faq-question {
+            display: flex;
+            align-items: center;
+            cursor: pointer;
+            transition: background-color 0.3s;
+        }
+
+        .faq-question:hover {
+            background-color: #f9f9f9;
+        }
+
+        .faq-number {
+            background-color: #5c1a1a;
+            color: white;
+            padding: 30px 25px;
+            font-size: 20px;
+            font-weight: bold;
+            min-width: 80px;
+            text-align: center;
+        }
+
+        .faq-text {
+            flex: 1;
+            padding: 20px 25px;
+            font-size: 16px;
+            color: #333;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .faq-icon {
+            width: 30px;
+            height: 30px;
+            background-color: #5c1a1a;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-size: 20px;
+            transition: transform 0.3s;
+            flex-shrink: 0;
+            margin-left: 15px;
+        }
+
+        .faq-item.active .faq-icon {
+            transform: rotate(180deg);
+        }
+
+        .faq-answer {
+            max-height: 0;
+            overflow: hidden;
+            transition: max-height 0.3s ease-out;
+            background-color: #f9f9f9;
+        }
+
+        .faq-answer-content {
+            padding: 25px;
+            color: #555;
+            line-height: 1.8;
+            font-size: 15px;
+        }
+
+        .faq-item.active .faq-answer {
+            max-height: 500px;
+        }
+
+        .message-button {
+            position: fixed;
+            bottom: 30px;
+            right: 30px;
+            background-color: #5c1a1a;
+            color: white;
+            padding: 15px 30px;
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            cursor: pointer;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.3);
+            transition: transform 0.3s;
+            text-decoration: none;
+            z-index: 1000;
+        }
+
+        .message-button:hover {
+            transform: scale(1.05);
+        }
+
+        .contact-section {
+            background-color: white;
+            padding: 40px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            position: sticky;
+            top: 20px;
+        }
+
+        .contact-form {
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+
+        .form-input, .form-textarea {
+            width: 100%;
+            padding: 15px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 14px;
+            font-family: inherit;
+            background-color: #f9f9f9;
+        }
+
+        .form-input:focus, .form-textarea:focus {
+            outline: none;
+            border-color: #5c1a1a;
+            background-color: white;
+        }
+
+        .form-textarea {
+            min-height: 120px;
+            resize: vertical;
+        }
+
+        select.form-input {
+            cursor: pointer;
+            appearance: none;
+            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%23333' d='M6 9L1 4h10z'/%3E%3C/svg%3E");
+            background-repeat: no-repeat;
+            background-position: right 15px center;
+            padding-right: 40px;
+        }
+
+        .recaptcha-container {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 15px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            background-color: #f9f9f9;
+        }
+
+        .checkbox-container {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            cursor: pointer;
+        }
+
+        .checkbox-container input[type="checkbox"] {
+            width: 20px;
+            height: 20px;
+            cursor: pointer;
+        }
+
+        .recaptcha-logo {
+            font-size: 12px;
+            color: #999;
+            font-weight: bold;
+        }
+
+        .send-button {
+            background-color: #5c1a1a;
+            color: white;
+            padding: 15px 40px;
+            border: none;
+            border-radius: 4px;
+            font-size: 16px;
+            cursor: pointer;
+            transition: background-color 0.3s;
+            align-self: flex-end;
+        }
+
+        .send-button:hover {
+            background-color: #451515;
+        }
+
+        footer {
+            background-color: #5c1a1a;
+            color: white;
+            padding: 40px 20px 20px;
+            margin-top: 60px;
+            width: 100%;
+            position: relative;
+            left: 0;
+            right: 0;
+            margin-left: 0;
+            margin-right: 0;
+        }
+
+        .footer-content {
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+
+        .footer-nav {
+            display: flex;
+            justify-content: center;
+            gap: 40px;
+            margin-bottom: 30px;
+            flex-wrap: wrap;
+            max-width: 1200px;
+            margin-left: auto;
+            margin-right: auto;
+        }
+
+        .footer-nav a {
+            color: white;
+            text-decoration: none;
+            font-size: 16px;
+            transition: opacity 0.3s;
+            padding: 5px 10px;
+        }
+
+        .footer-nav a:hover {
+            opacity: 0.8;
+        }
+
+        .footer-bottom {
+            text-align: center;
+            border-top: 1px solid rgba(255,255,255,0.2);
+            padding-top: 20px;
+        }
+
+        .footer-bottom p {
+            margin: 5px 0;
+            font-size: 14px;
+        }
+
+        @media (max-width: 768px) {
+            .faq-container {
+                grid-template-columns: 1fr;
+            }
+
+            .main-content {
+                grid-template-columns: 1fr;
+            }
+
+            .contact-section {
+                position: relative;
+                top: 0;
+            }
+
+            header {
+                flex-direction: column;
+                gap: 20px;
+            }
+
+            nav {
+                flex-wrap: wrap;
+                justify-content: center;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="page-wrapper">
+    <header>
+        <div class="logo">
+            <svg width="50" height="50" viewBox="0 0 50 50">
+                <circle cx="25" cy="25" r="24" fill="#5c1a1a"/>
+                <circle cx="25" cy="25" r="18" fill="white"/>
+                <circle cx="25" cy="25" r="12" fill="#5c1a1a"/>
+            </svg>
+            <div>ESPIRITU SANTO<br><span style="font-size: 12px;">PAROCHIAL SCHOOL OF MANILA, INC.</span></div>
+        </div>
+        <nav>
+            <a href="#home">Home</a>
+            <a href="#about">About</a>
+            <a href="#programs">Academic Programs</a>
+            <a href="#contact">Contact Us</a>
+            <a href="#portal">Portal</a>
+            <div class="nav-buttons">
+                <a href="#attendance" class="btn btn-maroon">Online Attendance</a>
+                <a href="#orf" class="btn btn-gray">ORF System</a>
+                <a href="#shop" class="btn btn-yellow">Shop Now</a>
+                <a href="#enroll" class="btn btn-maroon">Enroll Now</a>
+            </div>
+        </nav>
+    </header>
+
+    <div class="hero">
+        <h1>We'd love to hear from you!</h1>
+        <p>Our school is ready to answer your questions.</p>
+        <div class="faq-header">Frequently Asked Questions</div>
+    </div>
+
+    <div class="main-content">
+        <div class="contact-section">
+            <div class="contact-form">
+                <input type="text" placeholder="*Name" class="form-input">
+                <input type="tel" placeholder="*Enter Contact Number" class="form-input">
+                <input type="email" placeholder="*Enter Email Address" class="form-input">
+                <select class="form-input">
+                    <option>Select Department</option>
+                    <option>Admissions</option>
+                    <option>Registrar</option>
+                    <option>Finance</option>
+                    <option>Academic Programs</option>
+                    <option>Student Affairs</option>
+                </select>
+                <textarea placeholder="*Message" class="form-textarea"></textarea>
+                
+                <div class="recaptcha-container">
+                    <label class="checkbox-container">
+                        <input type="checkbox" id="notRobot">
+                        <span>I'm not a robot</span>
+                    </label>
+                    <div class="recaptcha-logo">reCAPTCHA</div>
+                </div>
+                
+                <button class="send-button">Send</button>
+            </div>
+        </div>
+
+        <div class="faq-container">
+        <div class="faq-item">
+            <div class="faq-question" onclick="toggleFAQ(this)">
+                <div class="faq-number">Q1</div>
+                <div class="faq-text">
+                    <span>May we know the amount of school fees for SY 2025-2026</span>
+                    <div class="faq-icon">⌄</div>
+                </div>
+            </div>
+            <div class="faq-answer">
+                <div class="faq-answer-content">
+                    Please click or tap the link for the updated school fees for SY 2025-2026. The fees are updated for the Hyflex (Hybrid-Flexible) Learning and Teaching Modality. You will also be given a hard copy of this for your reference.
+                </div>
+            </div>
+        </div>
+
+        <div class="faq-item">
+            <div class="faq-question" onclick="toggleFAQ(this)">
+                <div class="faq-number">Q2</div>
+                <div class="faq-text">
+                    <span>What are the requirements for admission/enrollment for the NEW students?</span>
+                    <div class="faq-icon">⌄</div>
+                </div>
+            </div>
+            <div class="faq-answer">
+                <div class="faq-answer-content">
+                    New students are required to submit the following documents: birth certificate (PSA copy), report card from previous school, good moral certificate, medical records, and 2x2 ID photos. Additional requirements may vary depending on the grade level.
+                </div>
+            </div>
+        </div>
+
+        <div class="faq-item">
+            <div class="faq-question" onclick="toggleFAQ(this)">
+                <div class="faq-number">Q3</div>
+                <div class="faq-text">
+                    <span>What are the details of online payment for school fees?</span>
+                    <div class="faq-icon">⌄</div>
+                </div>
+            </div>
+            <div class="faq-answer">
+                <div class="faq-answer-content">
+                    We accept online payments through various channels including bank transfers, GCash, and credit/debit cards. Payment instructions and account details will be provided upon enrollment. A confirmation receipt will be issued for all online transactions.
+                </div>
+            </div>
+        </div>
+
+        <div class="faq-item">
+            <div class="faq-question" onclick="toggleFAQ(this)">
+                <div class="faq-number">Q4</div>
+                <div class="faq-text">
+                    <span>What are the processes and Documents needed for the Enrollment?</span>
+                    <div class="faq-icon">⌄</div>
+                </div>
+            </div>
+            <div class="faq-answer">
+                <div class="faq-answer-content">
+                    The enrollment process includes: filling out the application form, submitting required documents, payment of enrollment fees, and attending the orientation. Documents needed include completed enrollment form, assessment form, and all required certificates.
+                </div>
+            </div>
+        </div>
+
+        <div class="faq-item">
+            <div class="faq-question" onclick="toggleFAQ(this)">
+                <div class="faq-number">Q5</div>
+                <div class="faq-text">
+                    <span>What is the school calendar for SY 2025-2026?</span>
+                    <div class="faq-icon">⌄</div>
+                </div>
+            </div>
+            <div class="faq-answer">
+                <div class="faq-answer-content">
+                    The school year 2025-2026 will follow the DepEd approved calendar. Classes will begin in August 2025 and end in May 2026. Specific dates for holidays, breaks, and examination periods will be provided during enrollment.
+                </div>
+            </div>
+        </div>
+
+        <div class="faq-item">
+            <div class="faq-question" onclick="toggleFAQ(this)">
+                <div class="faq-number">Q6</div>
+                <div class="faq-text">
+                    <span>What scholarships are available for students?</span>
+                    <div class="faq-icon">⌄</div>
+                </div>
+            </div>
+            <div class="faq-answer">
+                <div class="faq-answer-content">
+                    We offer various scholarship programs including academic scholarships, athletic scholarships, and financial assistance programs. Eligibility criteria and application procedures are available at the school registrar's office.
+                </div>
+            </div>
+        </div>
+
+        <div class="faq-item">
+            <div class="faq-question" onclick="toggleFAQ(this)">
+                <div class="faq-number">Q7</div>
+                <div class="faq-text">
+                    <span>What are the school uniform requirements?</span>
+                    <div class="faq-icon">⌄</div>
+                </div>
+            </div>
+            <div class="faq-answer">
+                <div class="faq-answer-content">
+                    School uniforms are required for all students. The prescribed uniform includes the school polo shirt, pants/skirt, and school shoes. PE uniforms are also required for physical education classes. Uniforms can be purchased from our authorized suppliers.
+                </div>
+            </div>
+        </div>
+
+        <div class="faq-item">
+            <div class="faq-question" onclick="toggleFAQ(this)">
+                <div class="faq-number">Q8</div>
+                <div class="faq-text">
+                    <span>What extracurricular activities are offered?</span>
+                    <div class="faq-icon">⌄</div>
+                </div>
+            </div>
+            <div class="faq-answer">
+                <div class="faq-answer-content">
+                    We offer a wide range of extracurricular activities including sports teams, music and arts programs, academic clubs, and community service organizations. Students are encouraged to participate to develop their talents and interests.
+                </div>
+            </div>
+        </div>
+
+        <div class="faq-item">
+            <div class="faq-question" onclick="toggleFAQ(this)">
+                <div class="faq-number">Q9</div>
+                <div class="faq-text">
+                    <span>What is the student-to-teacher ratio?</span>
+                    <div class="faq-icon">⌄</div>
+                </div>
+            </div>
+            <div class="faq-answer">
+                <div class="faq-answer-content">
+                    We maintain a favorable student-to-teacher ratio to ensure personalized attention. Our average class size is 25-30 students, allowing teachers to provide quality instruction and individual support to each student.
+                </div>
+            </div>
+        </div>
+
+        <div class="faq-item">
+            <div class="faq-question" onclick="toggleFAQ(this)">
+                <div class="faq-number">Q10</div>
+                <div class="faq-text">
+                    <span>Are there transportation services available?</span>
+                    <div class="faq-icon">⌄</div>
+                </div>
+            </div>
+            <div class="faq-answer">
+                <div class="faq-answer-content">
+                    Yes, we provide school bus transportation services covering various routes in Metro Manila. Transportation fees are separate from tuition. Route details and schedules are available at the school office.
+                </div>
+            </div>
+        </div>
+
+        <div class="faq-item">
+            <div class="faq-question" onclick="toggleFAQ(this)">
+                <div class="faq-number">Q11</div>
+                <div class="faq-text">
+                    <span>What are the school hours?</span>
+                    <div class="faq-icon">⌄</div>
+                </div>
+            </div>
+            <div class="faq-answer">
+                <div class="faq-answer-content">
+                    Regular school hours are from 7:30 AM to 3:30 PM, Monday through Friday. Preschool and kindergarten have slightly different schedules. Extended hours and after-school programs are also available.
+                </div>
+            </div>
+        </div>
+
+        <div class="faq-item">
+            <div class="faq-question" onclick="toggleFAQ(this)">
+                <div class="faq-number">Q12</div>
+                <div class="faq-text">
+                    <span>Does the school have a cafeteria?</span>
+                    <div class="faq-icon">⌄</div>
+                </div>
+            </div>
+            <div class="faq-answer">
+                <div class="faq-answer-content">
+                    Yes, we have a school cafeteria that offers nutritious meals and snacks. Students can purchase food or bring packed lunches. We maintain high standards of food safety and nutrition in all our cafeteria offerings.
+                </div>
+            </div>
+        </div>
+
+        <div class="faq-item">
+            <div class="faq-question" onclick="toggleFAQ(this)">
+                <div class="faq-number">Q13</div>
+                <div class="faq-text">
+                    <span>How can parents stay updated on their child's progress?</span>
+                    <div class="faq-icon">⌄</div>
+                </div>
+            </div>
+            <div class="faq-answer">
+                <div class="faq-answer-content">
+                    Parents can access their child's grades, attendance, and progress through our online portal. We also conduct regular parent-teacher conferences, send progress reports, and maintain open communication channels via email and phone.
+                </div>
+            </div>
+        </div>
+    </div>
+    </div>
+
+    <footer>
+        <div class="footer-content">
+            <div class="footer-nav">
+                <a href="#home">Home</a>
+                <a href="#about">About</a>
+                <a href="#programs">Academic Programs</a>
+                <a href="#online">Online Learning</a>
+                <a href="#alumni">Alumni</a>
+                <a href="#news">News</a>
+                <a href="#contact">Contact Us</a>
+                <a href="#request">Request</a>
+                <a href="#portal">Portal</a>
+            </div>
+            <div class="footer-bottom">
+                <p>© 2026 OrangeApps Inc. All Rights Reserved.</p>
+                <p>Crafted with ♥ by the OrangeApps Team.</p>
+            </div>
+        </div>
+    </footer>
+
+    <a href="#message" class="message-button" onclick="scrollToContact(event)">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="white">
+            <path d="M20 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2zm0 4l-8 5-8-5V6l8 5 8-5v2z"/>
+        </svg>
+        Message Us!
+    </a>
+
+    <script>
+        function toggleFAQ(element) {
+            const faqItem = element.parentElement;
+            
+            // Toggle only the clicked item
+            faqItem.classList.toggle('active');
+        }
+
+        function scrollToContact(event) {
+            event.preventDefault();
+            document.querySelector('.contact-section').scrollIntoView({ 
+                behavior: 'smooth' 
+            });
+        }
+    </script>
+</body>
+</html>
