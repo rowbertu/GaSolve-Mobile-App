@@ -3,7 +3,7 @@ import { Audio } from 'expo-av';
 import * as Notifications from 'expo-notifications';
 import { useRouter } from 'expo-router'; // Added for Logout Navigation
 import { signOut } from 'firebase/auth'; // Added for Logout
-import { limitToLast, onValue, orderByChild, push, query, ref, remove, set, update } from "firebase/database";
+import { limitToLast, onValue, orderByChild, push, query, ref, remove, update } from "firebase/database";
 import React, { useEffect, useRef, useState } from "react";
 import {
   Alert,
@@ -18,7 +18,6 @@ import {
   ScrollView,
   StatusBar,
   StyleSheet,
-  Switch,
   Text,
   TextInput,
   TouchableOpacity,
@@ -30,6 +29,7 @@ import { LineChart } from "react-native-chart-kit";
 import { Dropdown } from 'react-native-element-dropdown';
 import { GestureHandlerRootView, Swipeable } from 'react-native-gesture-handler';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import GasValveButton from "../components/gas-valve-button";
 
 import {
   Poppins_400Regular,
@@ -226,9 +226,11 @@ function HomeScreen() {
   const [gasLevel, setGasLevel] = useState(0);
   const [weight, setWeight] = useState(0);
   const [valveOpen, setValveOpen] = useState(true);
+  const [systemStatus, setSystemStatus] = useState("");
   const [threshold, setThreshold] = useState(1000); 
   
-  const isAlertActive = useRef(false); 
+  const isAlertActive = useRef(false);
+  const wasInEmergency = useRef(false);
   const soundObject = useRef(new Audio.Sound());
   
   useEffect(() => {
@@ -247,38 +249,76 @@ function HomeScreen() {
       gas: ref(rtdb, "Home_01/Live_Status/Gas_PPM"),
       weight: ref(rtdb, "Home_01/Live_Status/Weight_KG"),
       valve: ref(rtdb, "Home_01/Live_Status/Valve_State"),
-      limit: ref(rtdb, "Home_01/Settings/Threshold") 
+      statusText: ref(rtdb, "Home_01/Live_Status/Status"),
+      limit: ref(rtdb, "Home_01/Live_Status/Settings/Threshold") 
     };
     onValue(refs.gas, (s) => s.exists() && setGasLevel(Number(s.val())));
     onValue(refs.weight, (s) => s.exists() && setWeight(Number(s.val())));
     onValue(refs.valve, (s) => s.exists() && setValveOpen(s.val() === 1 || s.val() === true));
+    onValue(refs.statusText, (s) => s.exists() && setSystemStatus(s.val()));
     onValue(refs.limit, (s) => s.exists() && setThreshold(Number(s.val())));
   }, []);
 
   useEffect(() => {
     const checkSafety = async () => {
+      const statusRef = ref(rtdb, "Home_01/Live_Status");
+
+      // --- 1. DANGER ZONE ---
       if (gasLevel >= threshold) {
-        if (valveOpen) set(ref(rtdb, "Home_01/Live_Status/Valve_State"), 0);
-        if (!isAlertActive.current){
+        wasInEmergency.current = true;
+        
+        update(statusRef, {
+          Valve_State: 0,
+          Status: "⚠️ High gas levels detected. Follow the safety instructions immediately."
+        });
+        
+        if (!isAlertActive.current) {
           isAlertActive.current = true;
           await playSiren();
-          sendLocalNotification("⚠️ GAS LEAK WARNING", "High gas levels detected! Valve closed automatically.");
+          const monthKey = new Date().toISOString().slice(0, 7); // YYYY-MM format
+          push(ref(rtdb, `Home_01/History/${monthKey}`), {
+            event: "⚠️ GAS LEAK DETECTED",
+            timestamp: Date.now(),
+            details: `Gas level reached ${gasLevel} PPM.`
+          });
         }
-      } else {
-        if (isAlertActive.current) { 
-            isAlertActive.current = false; 
-            await stopSiren(); 
+      } 
+      // --- 2. SAFE ZONE ---
+      else if (gasLevel < (threshold - 100)) {
+        
+        if (wasInEmergency.current) {
+          update(statusRef, {
+            Valve_State: 1,
+            Status: "🔄 Gas Restored: Reopening Valve"
+          });
+          wasInEmergency.current = false;
+        } else {
+          update(statusRef, {
+            Status: "✅ No leaks detected. Environment is secure."
+          });
+        }
+
+        if (isAlertActive.current) {
+          isAlertActive.current = false;
+          await stopSiren();
         }
       }
+      // --- 3. COOKING ZONE ---
+      else {
+        update(statusRef, {
+          Valve_State: 1,
+          Status: "🔥 Gas is being used. Levels are elevated but within normal range."
+        });
+      }
     };
+
     checkSafety();
-  }, [gasLevel, threshold, valveOpen]);
+  }, [gasLevel, threshold]); 
 
   async function playSiren() {
     try {
       const status = await soundObject.current.getStatusAsync();
       if (!status.isLoaded) {
-          // Swapped to a more reliable royalty-free sound link
           await soundObject.current.loadAsync(
               { uri: 'https://cdn.pixabay.com/audio/2022/10/16/audio_a15f013bd8.mp3' }, 
               { shouldPlay: true, isLooping: true, volume: 1.0 }
@@ -301,27 +341,74 @@ function HomeScreen() {
     } catch (error) { console.log("Stop Error:", error); }
   }
 
-  let mode = "SAFE"; 
+ let mode = "SAFE"; 
   let primaryColor = THEME.safeGreen;
   let statusTitle = "SAFE";
-  let statusDesc = "No leaks detected. Environment is secure.";
-  let statusIcon: any = "shield-check";
+  let statusDesc = systemStatus || "No leaks detected. Environment is secure."; 
+
+  let statusIcon: any = valveOpen ? "shield-check" : "lock";
 
   if (gasLevel >= threshold) {
-      mode = "WARNING"; primaryColor = THEME.primaryRed; statusTitle = "WARNING"; statusDesc = "High gas levels detected. Evacuate immediately."; statusIcon = "alert-octagon";
+      mode = "WARNING"; 
+      primaryColor = THEME.primaryRed; 
+      statusTitle = "WARNING"; 
+      statusDesc = systemStatus || "High gas levels detected. Valve closed immediately."; 
+      statusIcon = "alert-octagon";
   } else if (gasLevel >= 250) {
-      mode = "COOKING"; primaryColor = THEME.cookingOrange; statusTitle = "IN USE"; statusDesc = "Gas is being used. Levels are elevated but within normal range."; statusIcon = "fire";
+      mode = "COOKING"; 
+      primaryColor = THEME.cookingOrange; 
+      statusTitle = "IN USE"; 
+      statusDesc = "Gas is being used. Levels are elevated but within normal range."; 
+      statusIcon = "fire";
   }
-
-  const toggleValve = () => {
-    if (mode === "WARNING" && !valveOpen) {
-        Alert.alert("Safety Lock", "Cannot open valve while high gas levels are detected.");
-        return;
+  
+ const toggleValve = () => {
+    if (gasLevel >= threshold) {
+      Alert.alert("Safety Lock", "Cannot open valve during a gas leak!");
+      return;
     }
+
+    const actionWord = valveOpen ? "CLOSE" : "OPEN";
+
     Alert.alert(
-      valveOpen ? "Close Valve?" : "Open Valve?",
-      valveOpen ? "Shutting off gas supply." : "Restoring gas supply.",
-      [{ text: "Cancel", style: "cancel" }, { text: "Yes", onPress: () => set(ref(rtdb, "Home_01/Live_Status/Valve_State"), !valveOpen ? 1 : 0) }]
+      "Confirm Action",
+      `Are you sure you want to ${actionWord} the gas valve?`,
+      [
+        {
+          text: "Cancel",
+          style: "cancel",
+        },
+        {
+          text: "Yes, I'm sure",
+          style: valveOpen ? "destructive" : "default",
+          onPress: () => {
+            // 3. FIREBASE UPDATE (Runs only if they confirm)
+            const newState = valveOpen ? 0 : 1;
+            update(ref(rtdb, "Home_01/Live_Status"), {
+              Valve_State: newState,
+              Status: newState === 1 ? "Valve Opened." : "Valve manually closed."
+            });
+
+            // 4. LOG TO HISTORY BY MONTH
+            const monthKey = new Date().toISOString().slice(0, 7); // YYYY-MM format
+            const historyRef = ref(rtdb, `Home_01/History/${monthKey}`);
+            const eventMsg = newState === 1 ? "🔓 VALVE OPENED MANUALLY" : "🔒 VALVE CLOSED MANUALLY";
+            const details = newState === 1 ? `Valve restored. Gas level at ${gasLevel} PPM.` : `Valve closed by user. Gas level at ${gasLevel} PPM.`;
+            
+            push(historyRef, {
+              event: eventMsg,
+              timestamp: Date.now(),
+              details: details
+            });
+
+            // 5. RESET EMERGENCY STATE IF OPENING
+            if (newState === 1) {
+              wasInEmergency.current = false;
+            }
+          }
+        },
+      ],
+      { cancelable: true }
     );
   };
 
@@ -357,24 +444,7 @@ function HomeScreen() {
             </View>
         ) : (
             <View style={{marginTop: 20}}>
-                <View style={styles.controlCard}>
-                    <View style={{flexDirection:'row', alignItems:'center'}}>
-                        <View style={[styles.iconBox, {backgroundColor: valveOpen ? '#E8F5E9' : '#FFEBEE'}]}>
-                            <MaterialCommunityIcons name="valve" size={24} color={valveOpen ? THEME.safeGreen : THEME.primaryRed} />
-                        </View>
-                        <View style={{marginLeft: 15}}>
-                            <Text style={styles.cardLabel}>Gas Valve</Text>
-                            <Text style={{fontSize: 12, color: valveOpen ? THEME.safeGreen : THEME.primaryRed, fontWeight:'bold'}}>
-                                {valveOpen ? "OPEN (Active)" : "CLOSED (Safe)"}
-                            </Text>
-                        </View>
-                    </View>
-                    <Switch
-                        trackColor={{ false: "#767577", true: THEME.primaryRed }}
-                        thumbColor={valveOpen ? "#fff" : "#f4f3f4"}
-                        onValueChange={toggleValve} value={valveOpen}
-                    />
-                </View>
+                <GasValveButton valveOpen={valveOpen} onToggle={toggleValve} />
 
                 <View style={styles.controlCard}>
                     <View style={{flexDirection:'row', alignItems:'center', flex:1}}>
@@ -407,7 +477,7 @@ function HistoryScreen() {
 
   const loadSimulatedData = () => {
     if (timeframe === 'daily') {
-        setChartLabels(["00:00", "04:00", "08:00", "12:00", "16:00", "20:00"]);
+        setChartLabels(["12 AM", "4 AM", "8 AM", "12 PM", "4 PM", "8 PM"]);
         setChartData([50, 150, 600, 1200, 450, 80]);
     } else {
         setChartLabels(["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]);
@@ -417,12 +487,15 @@ function HistoryScreen() {
 
   useEffect(() => {
     loadSimulatedData();
-    const historyRef = ref(rtdb, "Home_01/History");
-    const q = query(historyRef, orderByChild('timestamp'), limitToLast(5));
+    const monthKey = new Date().toISOString().slice(0, 7); // Current month YYYY-MM
+    const historyRef = ref(rtdb, `Home_01/History/${monthKey}`);
+    const q = query(historyRef, orderByChild('timestamp'), limitToLast(50));
     onValue(q, (snapshot) => {
       if (snapshot.exists()) {
         const data = snapshot.val();
         setLogs(Object.keys(data).map(k => ({id:k, ...data[k]})).sort((a,b)=>b.timestamp - a.timestamp));
+      } else {
+        setLogs([]);
       }
     });
   }, [timeframe]);
@@ -480,8 +553,13 @@ function HistoryScreen() {
             renderItem={({ item }) => (
                 <View style={styles.logItem}>
                     <Text style={{ fontFamily: 'Poppins_700Bold', color: THEME.darkGray }}>{item.event}</Text>
-                    <Text style={{ fontSize: 12, color: THEME.primaryRed }}>
-                      {new Date(item.timestamp).toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit' })}
+                    {item.details && (
+                      <Text style={{ fontSize: 12, color: THEME.darkGray, marginTop: 4 }}>
+                        {item.details}
+                      </Text>
+                    )}
+                    <Text style={{ fontSize: 12, color: THEME.primaryRed, marginTop: 4 }}>
+                      {new Date(item.timestamp).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true })}
                     </Text>
                 </View>
             )}
@@ -790,6 +868,43 @@ const styles = StyleSheet.create({
   cardLabel: { fontSize: 16, fontFamily: 'Poppins_700Bold', color: THEME.darkGray },
   progressBarBg: { height: 8, backgroundColor: '#EEE', borderRadius: 4, width: '100%', marginTop: 5 },
   progressBarFill: { height: 8, backgroundColor: THEME.primaryRed, borderRadius: 4 },
+  valveButton: { padding: 18, borderRadius: 16, marginBottom: 15, shadowColor: "#000", shadowOffset: {width:0, height:4}, shadowOpacity: 0.06, shadowRadius: 6, elevation: 4, borderWidth: 2 },
+  valveButtonDesc: { fontSize: 12, color: THEME.darkGray, marginTop: 2 },
+  valvePill: { paddingHorizontal: 12, paddingVertical: 8, borderRadius: 20, alignItems: 'center', justifyContent: 'center' },
+  valvePillText: { color: 'white', fontWeight: '700', fontSize: 14 },
+  largeValveButton: {
+    width: '100%',
+    paddingVertical: 18,
+    paddingHorizontal: 20,
+    borderRadius: 15,
+    marginVertical: 10,
+    elevation: 4,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.15,
+    shadowRadius: 4,
+  },
+  buttonContentRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  buttonTextColumn: {
+    flexDirection: 'column',
+    alignItems: 'flex-start',
+  },
+  largeValveTitle: {
+    color: 'white',
+    fontSize: 20,
+    fontWeight: '900',
+    letterSpacing: 0.5,
+  },
+  largeValveSubtitle: {
+    color: 'rgba(255, 255, 255, 0.9)',
+    fontSize: 13,
+    marginTop: 2,
+    fontWeight: '500',
+  },
   screenTitle: { fontSize: 28, fontFamily: 'Poppins_900Black', color: THEME.primaryRed, marginBottom: 20 },
   sectionHeader: { fontSize: 14, fontFamily: 'Poppins_700Bold', color: THEME.primaryRed, marginTop: 20, marginBottom: 10 },
   logItem: { backgroundColor: 'white', padding: 15, borderRadius: 10, marginBottom: 10, borderLeftWidth: 5, borderLeftColor: THEME.primaryRed },
@@ -824,4 +939,5 @@ const styles = StyleSheet.create({
   customTabBar: { flexDirection: 'row', backgroundColor: THEME.background, borderTopColor: '#F0E0E0', borderTopWidth: 1, height: Platform.OS === 'ios' ? 85 : 65, paddingTop: 10, paddingBottom: Platform.OS === 'ios' ? 25 : 5 },
   tabItem: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   tabLabel: { fontSize: 10, fontFamily: 'Poppins_600SemiBold', marginTop: 4 },
+  
 });
