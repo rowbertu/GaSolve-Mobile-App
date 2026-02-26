@@ -4,7 +4,7 @@
     "slug": "LPGSafetyApp",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/images/ICON.png",
+    "icon": "./assets/images/RED_LOGO.png",
     "scheme": "lpgsafetyapp",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
@@ -12,7 +12,7 @@
       "icon": "./assets/images/RED_LOGO.png"
     },
     "splash": {
-      "image": "./assets/images/ICON.png",
+      "image": "./assets/images/RED_LOGO.png",
       "resizeMode": "contain",
       "backgroundColor": "#ffffff"
     },
@@ -22,7 +22,7 @@
     "android": {
       "adaptiveIcon": {
         "backgroundColor": "#ffffff",
-        "foregroundImage": "./assets/images/ICON.png"
+        "foregroundImage": "./assets/images/RED_LOGO.png"
       },
       "edgeToEdgeEnabled": true,
       "package": "com.anonymous.LPGSafetyApp"

@@ -1,31 +1,50 @@
+import {
+  Poppins_400Regular,
+  Poppins_600SemiBold,
+  Poppins_700Bold,
+  useFonts
+} from '@expo-google-fonts/poppins';
 import { useRouter } from 'expo-router';
 import { createUserWithEmailAndPassword, signOut } from 'firebase/auth';
 import { doc, serverTimestamp, setDoc } from 'firebase/firestore';
 import { Eye, EyeOff, Lock, Mail, User } from 'lucide-react-native';
 import React, { useState } from 'react';
 import {
-    Alert,
-    Image,
-    Keyboard,
-    KeyboardAvoidingView,
-    Platform,
-    ScrollView,
-    StyleSheet,
-    Text,
-    TextInput,
-    TouchableOpacity,
-    View
+  Alert,
+  Image,
+  Keyboard,
+  KeyboardAvoidingView,
+  Platform,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View
 } from 'react-native';
 import { auth, db } from '../firebaseConfig'; // Make sure this path is correct!
 
 export default function SignUpScreen() {
   const router = useRouter();
+
+  // Load Fonts
+  const [fontsLoaded] = useFonts({
+    Poppins_400Regular,
+    Poppins_600SemiBold,
+    Poppins_700Bold,
+  });
+
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
+
+  // Prevent rendering until fonts are loaded to avoid flickering
+  if (!fontsLoaded) {
+    return null;
+  }
 
   const handleSignUp = async () => {
     Keyboard.dismiss(); // Clean UX: Hide keyboard immediately
@@ -111,6 +130,7 @@ export default function SignUpScreen() {
             resizeMode="contain"
           />
           <Text style={styles.brandTitle}>GaSolve</Text>
+          <Text style={styles.brandSubtitle}>LPG Leak Monitoring System</Text>
         </View>
 
         {/* --- BOTTOM CARD --- */}
@@ -208,41 +228,55 @@ const styles = StyleSheet.create({
   },
   scrollContent: {
     flexGrow: 1,
-    justifyContent: 'space-between', // Pushes top section up and bottom card down
+    justifyContent: 'space-between', 
   },
   topSection: {
-    paddingVertical: 50, // Replaced flex with padding for better ScrollView behavior
+    paddingTop: 30,    
+    paddingBottom: 20, 
     justifyContent: 'center',
     alignItems: 'center',
   },
   logo: { 
-    width: 80, 
-    height: 80, 
-    marginBottom: 5 
+    width: 90, 
+    height: 90, 
+    marginBottom: 5,
+    marginTop: 5, 
   },
   brandTitle: { 
     fontSize: 24, 
-    fontWeight: 'bold', 
-    color: '#b91c1c' 
+    fontFamily: 'Poppins_700Bold', // Replaced fontWeight
+    color: '#b91c1c'
   },
+  brandSubtitle: { 
+    fontSize: 14, 
+    color: '#b91c1c', 
+    fontFamily: 'Poppins_600SemiBold', // Added font family
+    marginTop: 5 
+  },   
   bottomCard: {
-    flex: 1, // Expands to fill remaining space
+    flex: 1, 
     backgroundColor: '#b91c1c',
     borderTopLeftRadius: 30,
     borderTopRightRadius: 30,
     padding: 30,
     paddingTop: 40,
-    paddingBottom: 60, // Extra padding at the bottom for smooth scrolling
+    paddingBottom: 60, 
+    elevation: 15, 
+    shadowColor: '#ce7373', 
+    shadowOffset: { width: 0, height: -5 },
+    shadowOpacity: 0.25,
+    shadowRadius: 15,
   },
   headerText: { 
     fontSize: 24, 
-    fontWeight: 'bold', 
+    fontFamily: 'Poppins_700Bold', // Replaced fontWeight
     color: '#fff', 
     marginBottom: 5 
   },
   subText: { 
     fontSize: 14, 
     color: '#ffcccc', 
+    fontFamily: 'Poppins_400Regular', // Added font family
     marginBottom: 25 
   },
   inputContainer: {
@@ -260,7 +294,8 @@ const styles = StyleSheet.create({
   input: { 
     flex: 1, 
     fontSize: 16, 
-    color: '#333' 
+    color: '#333',
+    fontFamily: 'Poppins_400Regular', // Added font family
   },
   button: {
     backgroundColor: '#FDFBF7',
@@ -270,22 +305,24 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginTop: 10,
     marginBottom: 20,
+    elevation: 2, 
   },
   buttonText: { 
     color: '#b91c1c', 
     fontSize: 18, 
-    fontWeight: 'bold' 
+    fontFamily: 'Poppins_700Bold', // Replaced fontWeight
   },
   loginContainer: { 
     flexDirection: 'row', 
     justifyContent: 'center' 
   },
   loginText: { 
-    color: '#ffcccc' 
+    color: '#ffcccc',
+    fontFamily: 'Poppins_400Regular', // Added font family
   },
   loginLink: { 
     color: '#fff', 
-    fontWeight: 'bold', 
+    fontFamily: 'Poppins_700Bold', // Replaced fontWeight
     textDecorationLine: 'underline' 
   },
 });

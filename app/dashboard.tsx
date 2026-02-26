@@ -6,24 +6,24 @@ import { EmailAuthProvider, reauthenticateWithCredential, signOut, updatePasswor
 import { limitToLast, onValue, orderByChild, push, query, ref, remove, update } from "firebase/database";
 import React, { useEffect, useRef, useState } from "react";
 import {
-  Alert,
-  Dimensions,
-  FlatList,
-  Image,
-  Keyboard,
-  Linking,
-  LogBox,
-  Modal,
-  Platform,
-  ScrollView,
-  StatusBar,
-  StyleSheet,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  TouchableWithoutFeedback,
-  Vibration,
-  View
+    Alert,
+    Dimensions,
+    FlatList,
+    Image,
+    Keyboard,
+    Linking,
+    LogBox,
+    Modal,
+    Platform,
+    ScrollView,
+    StatusBar,
+    StyleSheet,
+    Text,
+    TextInput,
+    TouchableOpacity,
+    TouchableWithoutFeedback,
+    Vibration,
+    View
 } from "react-native";
 import { LineChart } from "react-native-chart-kit";
 import { Dropdown } from 'react-native-element-dropdown';
@@ -32,11 +32,11 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import GasValveButton from "../components/gas-valve-button";
 
 import {
-  Poppins_400Regular,
-  Poppins_600SemiBold,
-  Poppins_700Bold,
-  Poppins_900Black,
-  useFonts
+    Poppins_400Regular,
+    Poppins_600SemiBold,
+    Poppins_700Bold,
+    Poppins_900Black,
+    useFonts
 } from '@expo-google-fonts/poppins';
 
 import { doc, getDoc, updateDoc } from 'firebase/firestore'; // <-- Add this line
@@ -46,12 +46,13 @@ LogBox.ignoreLogs(['Virtual Log', 'Text string must be rendered']);
 
 // --- DESIGN THEME ---
 const THEME = {
-  background: '#FFF8F0',    
+  background: '#FFFBF5',    
   primaryRed: '#DC2626',    
   safeGreen: '#10B981',     
   cookingOrange: '#F59E0B', 
   darkGray: '#37474F',      
   white: '#FFFFFF',
+  surface: '#FFFBF5',
   editBlue: '#3B82F6', 
 };
 
@@ -188,7 +189,7 @@ const SimpleHeader = () => (
   <View style={styles.headerContainer}>
     <View style={{alignItems:'center', justifyContent:'center'}}>
         <View style={{flexDirection: 'row', alignItems: 'center'}}>
-            <Image source={require('../assets/images/ICON.png')} style={{width: 130, height: 80, resizeMode:'contain'}} />
+            <Image source={require('../assets/images/RED_LOGO.png')} style={{width: 130, height: 80, resizeMode:'contain'}} />
         </View>
     </View>
   </View>
@@ -551,7 +552,8 @@ function HistoryScreen() {
     <View style={styles.screenContainer}>
         <SimpleHeader />
         <FlatList
-            data={logs} keyExtractor={i => i.id} ListHeaderComponent={renderHeader} contentContainerStyle={{ padding: 20 }}
+            data={logs.slice(0, 5)} // This cuts the list down to just the first 3 items
+            keyExtractor={i => i.id} ListHeaderComponent={renderHeader} contentContainerStyle={{ padding: 20 }}
             renderItem={({ item }) => (
                 <View style={styles.logItem}>
                     <Text style={{ fontFamily: 'Poppins_700Bold', color: THEME.darkGray }}>{item.event}</Text>
@@ -704,6 +706,22 @@ function EmergencyScreen() {
                             <TouchableOpacity style={styles.continueBtn} onPress={handleSaveMember}>
                                 <Text style={{color:'white', fontFamily:'Poppins_700Bold'}}>SAVE</Text>
                             </TouchableOpacity>
+
+                            {/* Subtle Cancel Button */}
+                            <TouchableOpacity 
+                                style={{
+                                    backgroundColor: '#F5F5F5', 
+                                    padding: 15, 
+                                    borderRadius: 10, 
+                                    alignItems: 'center', 
+                                    marginTop: 10, 
+                                    borderWidth: 1, 
+                                    borderColor: '#E0E0E0'
+                                }} 
+                                onPress={closeAndResetModal}
+                            >
+                                <Text style={{fontSize: 15, color: THEME.darkGray, fontFamily: 'Poppins_700Bold'}}>Cancel</Text>
+                            </TouchableOpacity>
                         </View>
                     </View>
                     </TouchableWithoutFeedback>
@@ -716,12 +734,14 @@ function EmergencyScreen() {
 function SettingsScreen() {
     const router = useRouter(); 
     
-    // State to hold the fetched name
-    const [userName, setUserName] = useState("Loading...");
-    const [isEditModalVisible, setEditModalVisible] = useState(false);
+    // State to hold the fetched name - defaults to "User" while loading
+    const [userName, setUserName] = useState("User");
+    const [isProfileModalVisible, setProfileModalVisible] = useState(false);
+    const [isPasswordModalVisible, setPasswordModalVisible] = useState(false);
+    const [isAboutModalVisible, setAboutModalVisible] = useState(false);
+    const [aboutTab, setAboutTab] = useState('about');
     const [editName, setEditName] = useState('');
     const [editError, setEditError] = useState(false);
-    const [isPasswordModalVisible, setPasswordModalVisible] = useState(false);
     const [currentPassword, setCurrentPassword] = useState('');
     const [newPassword, setNewPassword] = useState('');
     const [confirmPassword, setConfirmPassword] = useState('');
@@ -733,12 +753,10 @@ function SettingsScreen() {
         const fetchUserData = async () => {
             if (auth.currentUser) {
                 try {
-                    // Look inside the "users" collection for the document matching the User's ID
                     const userDocRef = doc(db, "users", auth.currentUser.uid);
                     const userDocSnap = await getDoc(userDocRef);
                     
                     if (userDocSnap.exists()) {
-                        // Successfully found the data, update the state!
                         setUserName(userDocSnap.data().fullName);
                     } else {
                         setUserName("Unknown User");
@@ -753,13 +771,13 @@ function SettingsScreen() {
         fetchUserData();
     }, []);
 
-    const handleOpenEditModal = () => {
-        setEditName(userName);
+    const openProfileModal = () => {
+        setEditName(userName !== "User" ? userName : "");
         setEditError(false);
-        setEditModalVisible(true);
+        setProfileModalVisible(true);
     };
 
-    const handleOpenPasswordModal = () => {
+    const openPasswordModal = () => {
         setCurrentPassword('');
         setNewPassword('');
         setConfirmPassword('');
@@ -780,11 +798,8 @@ function SettingsScreen() {
 
         try {
             if (auth.currentUser && auth.currentUser.email) {
-                // Re-authenticate user with current password
                 const credential = EmailAuthProvider.credential(auth.currentUser.email, currentPassword);
                 await reauthenticateWithCredential(auth.currentUser, credential);
-
-                // Update password
                 await updatePassword(auth.currentUser, newPassword);
                 setPasswordModalVisible(false);
                 setCurrentPassword('');
@@ -816,7 +831,7 @@ function SettingsScreen() {
                 const userDocRef = doc(db, "users", auth.currentUser.uid);
                 await updateDoc(userDocRef, { fullName: editName });
                 setUserName(editName);
-                setEditModalVisible(false);
+                setProfileModalVisible(false);
                 setEditError(false);
                 Alert.alert("Success", "Profile updated successfully!");
             }
@@ -853,7 +868,8 @@ function SettingsScreen() {
             <SimpleHeader />
             <ScrollView contentContainerStyle={{padding: 24, paddingBottom: 100}}>
                 <Text style={styles.screenTitle}>SETTINGS</Text>
-                <TouchableOpacity onPress={handleOpenEditModal} style={{flexDirection:'row', alignItems:'center', marginBottom:20}}>
+                
+                <TouchableOpacity onPress={openProfileModal} style={{flexDirection:'row', alignItems:'center', marginBottom:20}}>
                     <Ionicons name="person-circle" size={100} color={THEME.primaryRed} />
                     <View style={{marginLeft:10, flex:1}}>
                         <Text style={{fontSize:20, fontFamily:'Poppins_700Bold', color: THEME.primaryRed}}>
@@ -866,23 +882,56 @@ function SettingsScreen() {
                             <Feather name="edit-2" size={14} color={THEME.primaryRed} />
                             <Text style={{fontSize:12, color:THEME.primaryRed, fontFamily:'Poppins_600SemiBold', marginLeft:4}}>Edit Profile</Text>
                         </View>
-                    </View>    
+                    </View>   
                 </TouchableOpacity>
-                <TouchableOpacity style={[styles.logoutBtnNew, {backgroundColor: THEME.editBlue, marginBottom: 12}]} onPress={handleOpenPasswordModal}>
-                    <Text style={{fontSize:15, color:'white', fontFamily:'Poppins_700Bold', fontWeight:'bold'}}>Change Password</Text>
+
+                {/* Subtle Change Password Button */}
+                <TouchableOpacity 
+                    style={{
+                        backgroundColor: '#F5F5F5', 
+                        padding: 15, 
+                        borderRadius: 10, 
+                        alignItems: 'center', 
+                        marginTop: 20, 
+                        borderWidth: 1,
+                        borderColor: '#E0E0E0'
+                    }} 
+                    onPress={openPasswordModal}
+                >
+                    <Text style={{fontSize: 15, color: THEME.darkGray, fontFamily: 'Poppins_700Bold'}}>Change Password</Text>
                 </TouchableOpacity>
+
+                {/* Subtle About GaSolve Button */}
+                <TouchableOpacity 
+                    style={{
+                        backgroundColor: '#F5F5F5', 
+                        padding: 15, 
+                        borderRadius: 10, 
+                        alignItems: 'center', 
+                        marginTop: 12, 
+                        marginBottom: 12,
+                        borderWidth: 1,
+                        borderColor: '#E0E0E0'
+                    }} 
+                    onPress={() => setAboutModalVisible(true)}
+                >
+                    <Text style={{fontSize: 15, color: THEME.darkGray, fontFamily: 'Poppins_700Bold'}}>About GaSolve</Text>
+                </TouchableOpacity>
+
+                {/* Primary Red Log Out Button */}
                 <TouchableOpacity style={styles.logoutBtnNew} onPress={handleLogout}>
-                    <Text style={{fontSize:15, color:'white', fontFamily:'Poppins_700Bold', fontWeight:'bold'}}>Log Out</Text>
+                    <Text style={{fontSize: 15, color: 'white', fontFamily: 'Poppins_700Bold', fontWeight: 'bold'}}>Log Out</Text>
                 </TouchableOpacity>
             </ScrollView>
 
-            <Modal visible={isEditModalVisible} animationType="slide" transparent={true}>
+            {/* Profile Modal */}
+            <Modal visible={isProfileModalVisible} animationType="slide" transparent={true}>
                 <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
                 <View style={styles.modalOverlay}>
                     <View style={styles.addMemberModalContent}>
                         <View style={{flexDirection:'row', justifyContent:'space-between', marginBottom:20}}>
                             <Text style={styles.modalTitle}>Edit Profile</Text>
-                            <TouchableOpacity onPress={() => setEditModalVisible(false)}><Feather name="x" size={24} color={THEME.darkGray} /></TouchableOpacity>
+                            <TouchableOpacity onPress={() => setProfileModalVisible(false)}><Feather name="x" size={24} color={THEME.darkGray} /></TouchableOpacity>
                         </View>
 
                         <Text style={styles.label}>Full Name <Text style={{color:'red'}}>*</Text></Text>
@@ -897,11 +946,23 @@ function SettingsScreen() {
                         <TouchableOpacity style={styles.continueBtn} onPress={handleSaveName}>
                             <Text style={{color:'white', fontFamily:'Poppins_700Bold'}}>SAVE</Text>
                         </TouchableOpacity>
+
+                        {/* Subtle Cancel Button */}
+                        <TouchableOpacity 
+                            style={{
+                                backgroundColor: '#F5F5F5', padding: 15, borderRadius: 10, alignItems: 'center', 
+                                marginTop: 10, borderWidth: 1, borderColor: '#E0E0E0'
+                            }} 
+                            onPress={() => setProfileModalVisible(false)}
+                        >
+                            <Text style={{fontSize: 15, color: THEME.darkGray, fontFamily: 'Poppins_700Bold'}}>Cancel</Text>
+                        </TouchableOpacity>
                     </View>
                 </View>
                 </TouchableWithoutFeedback>
             </Modal>
 
+            {/* Password Modal */}
             <Modal visible={isPasswordModalVisible} animationType="slide" transparent={true}>
                 <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
                 <View style={styles.modalOverlay}>
@@ -944,9 +1005,137 @@ function SettingsScreen() {
                         <TouchableOpacity style={styles.continueBtn} onPress={handleChangePassword}>
                             <Text style={{color:'white', fontFamily:'Poppins_700Bold'}}>CHANGE PASSWORD</Text>
                         </TouchableOpacity>
+
+                        {/* Subtle Cancel Button */}
+                        <TouchableOpacity 
+                            style={{
+                                backgroundColor: '#F5F5F5', padding: 15, borderRadius: 10, alignItems: 'center', 
+                                marginTop: 10, borderWidth: 1, borderColor: '#E0E0E0'
+                            }} 
+                            onPress={() => setPasswordModalVisible(false)}
+                        >
+                            <Text style={{fontSize: 15, color: THEME.darkGray, fontFamily: 'Poppins_700Bold'}}>Cancel</Text>
+                        </TouchableOpacity>
                     </View>
                 </View>
                 </TouchableWithoutFeedback>
+            </Modal>
+
+            {/* About Modal */}
+            {/* About Modal */}
+            <Modal visible={isAboutModalVisible} animationType="fade" transparent={true}>
+                <View style={styles.modalOverlay}>
+                    <View style={[styles.addMemberModalContent, {height: '88%', flexDirection: 'column'}]}>
+                        {/* Header */}
+                        <View style={{flexDirection:'row', justifyContent:'space-between', alignItems:'center', marginBottom:20}}>
+                            <Text style={styles.modalTitle}>About GaSolve</Text>
+                            <TouchableOpacity onPress={() => setAboutModalVisible(false)}>
+                                <Feather name="x" size={24} color={THEME.darkGray} />
+                            </TouchableOpacity>
+                        </View>
+
+                        <ScrollView showsVerticalScrollIndicator={false} style={{flex: 1}}>
+                            
+                            {/* --- ABOUT SECTION --- */}
+                            <View style={{alignItems: 'center', marginBottom: 20}}>
+                                <Image source={require('../assets/images/RED_LOGO.png')} style={{width: 70, height: 54, resizeMode:'contain'}} />
+                                <Text style={{fontSize: 22, fontFamily: 'Poppins_700Bold', color: THEME.primaryRed, marginTop: 5}}>GaSolve</Text>
+                                <Text style={{fontSize: 12, color: '#999', fontFamily: 'Poppins_600SemiBold'}}>Version 1.0.0</Text>
+                            </View>
+
+                            <View style={{backgroundColor: '#f5f5f5', borderRadius: 12, padding: 14, marginBottom: 15}}>
+                                <Text style={{fontSize: 14, fontFamily: 'Poppins_700Bold', color: THEME.darkGray, marginBottom: 8}}>What is GaSolve?</Text>
+                                <Text style={{fontSize: 12, color: '#555', lineHeight: 18, fontFamily: 'Poppins_400Regular'}}>
+                                    GaSolve is a smart LPG safety monitoring system designed to protect your home and loved ones from gas leaks. Our app provides real-time gas level monitoring, automatic valve control, and instant alerts.
+                                </Text>
+                            </View>
+
+                            <View style={{backgroundColor: '#FFF0F0', borderRadius: 12, padding: 14, borderLeftWidth: 4, borderLeftColor: THEME.primaryRed, marginBottom: 30}}>
+                                <Text style={{fontSize: 14, fontFamily: 'Poppins_700Bold', color: THEME.primaryRed, marginBottom: 6}}>Emergency Support</Text>
+                                <Text style={{fontSize: 12, color: THEME.darkGray, fontFamily: 'Poppins_600SemiBold'}}>Call 911 / BFP for emergencies</Text>
+                            </View>
+
+
+                            {/* --- FEATURES SECTION --- */}
+                            <Text style={{fontSize: 14, fontFamily: 'Poppins_700Bold', color: THEME.darkGray, marginBottom: 12}}>Key Features</Text>
+                            
+                            <View style={{backgroundColor: '#FFF0F0', borderRadius: 12, padding: 14, borderLeftWidth: 4, borderLeftColor: THEME.primaryRed, marginBottom: 15}}>
+                                <View style={{marginBottom: 10}}>
+                                    <Text style={{fontSize: 12, color: THEME.darkGray, fontFamily: 'Poppins_600SemiBold'}}>📊 Real-time PPM monitoring</Text>
+                                </View>
+                                <View style={{marginBottom: 10}}>
+                                    <Text style={{fontSize: 12, color: THEME.darkGray, fontFamily: 'Poppins_600SemiBold'}}>🚨 Automatic safety alerts</Text>
+                                </View>
+                                <View style={{marginBottom: 10}}>
+                                    <Text style={{fontSize: 12, color: THEME.darkGray, fontFamily: 'Poppins_600SemiBold'}}>🔒 Valve auto-shutoff feature</Text>
+                                </View>
+                                <View style={{marginBottom: 10}}>
+                                    <Text style={{fontSize: 12, color: THEME.darkGray, fontFamily: 'Poppins_600SemiBold'}}>📈 Historical analytics</Text>
+                                </View>
+                                <View>
+                                    <Text style={{fontSize: 12, color: THEME.darkGray, fontFamily: 'Poppins_600SemiBold'}}>👥 Emergency contacts management</Text>
+                                </View>
+                            </View>
+
+                            <View style={{backgroundColor: '#f5f5f5', borderRadius: 12, padding: 14, marginBottom: 30}}>
+                                <Text style={{fontSize: 14, fontFamily: 'Poppins_700Bold', color: THEME.darkGray, marginBottom: 8}}>Safety Thresholds</Text>
+                                <Text style={{fontSize: 12, color: '#555', marginBottom: 4, fontFamily: 'Poppins_400Regular'}}>0-200 PPM: Clean Air ✅</Text>
+                                <Text style={{fontSize: 12, color: '#555', marginBottom: 4, fontFamily: 'Poppins_400Regular'}}>200-1000 PPM: In Use 🔥</Text>
+                                <Text style={{fontSize: 12, color: '#555', fontFamily: 'Poppins_400Regular'}}>1000+ PPM: Danger Zone ⚠️</Text>
+                            </View>
+
+
+                            {/* --- TEAM SECTION --- */}
+                            <Text style={{fontSize: 14, fontFamily: 'Poppins_700Bold', color: THEME.darkGray, marginBottom: 12}}>Development Team</Text>
+
+                            <View style={{backgroundColor: '#f5f5f5', borderRadius: 12, padding: 14, marginBottom: 15}}>
+                                <Text style={{fontSize: 12, fontFamily: 'Poppins_700Bold', color: THEME.darkGray, marginBottom: 4}}>Course</Text>
+                                <Text style={{fontSize: 12, color: '#555', fontFamily: 'Poppins_600SemiBold', marginBottom: 8}}>CPE 0414.1 - Capstone Project</Text>
+                                
+                                <Text style={{fontSize: 12, fontFamily: 'Poppins_700Bold', color: THEME.darkGray, marginBottom: 4}}>Group Number</Text>
+                                <Text style={{fontSize: 12, color: '#555', fontFamily: 'Poppins_600SemiBold', marginBottom: 8}}>Group 3</Text>
+                                
+                                <Text style={{fontSize: 12, fontFamily: 'Poppins_700Bold', color: THEME.darkGray, marginBottom: 4}}>Institution</Text>
+                                <Text style={{fontSize: 12, color: '#555', fontFamily: 'Poppins_400Regular', lineHeight: 18}}>Pamantasan ng Lungsod ng Maynila{'\n'}BS Computer Engineering</Text>
+                            </View>
+
+                            <View style={{backgroundColor: '#FFF0F0', borderRadius: 12, overflow: 'hidden', borderLeftWidth: 4, borderLeftColor: THEME.primaryRed, marginBottom: 15}}>
+                                <View style={{padding: 12, borderBottomWidth: 1, borderBottomColor: '#FFE0E0'}}>
+                                    <Text style={{fontSize: 12, fontFamily: 'Poppins_600SemiBold', color: THEME.darkGray}}>Concepcion, John Angelo</Text>
+                                </View>
+                                <View style={{padding: 12, borderBottomWidth: 1, borderBottomColor: '#FFE0E0'}}>
+                                    <Text style={{fontSize: 12, fontFamily: 'Poppins_600SemiBold', color: THEME.darkGray}}>Delos Santos, Robert Jr. C.</Text>
+                                </View>
+                                <View style={{padding: 12, borderBottomWidth: 1, borderBottomColor: '#FFE0E0'}}>
+                                    <Text style={{fontSize: 12, fontFamily: 'Poppins_600SemiBold', color: THEME.darkGray}}>Leonardo, Aaron Joseph S.</Text>
+                                </View>
+                                <View style={{padding: 12, borderBottomWidth: 1, borderBottomColor: '#FFE0E0'}}>
+                                    <Text style={{fontSize: 12, fontFamily: 'Poppins_600SemiBold', color: THEME.darkGray}}>Palomares, Jehann Chelsey J.</Text>
+                                </View>
+                                <View style={{padding: 12}}>
+                                    <Text style={{fontSize: 12, fontFamily: 'Poppins_600SemiBold', color: THEME.darkGray}}>Reyes, Larianne Ayezah C.</Text>
+                                </View>
+                            </View>
+
+                            <View style={{backgroundColor: '#f5f5f5', borderRadius: 12, padding: 14, marginBottom: 20}}>
+                                <Text style={{fontSize: 12, fontFamily: 'Poppins_700Bold', color: THEME.darkGray, marginBottom: 6}}>Thesis Advisor</Text>
+                                <Text style={{fontSize: 12, color: '#555', fontFamily: 'Poppins_600SemiBold'}}>Engr. Evangeline P. Lubao</Text>
+                            </View>
+
+                        </ScrollView>
+
+                        {/* Subtle Close Button */}
+                        <TouchableOpacity 
+                            style={{
+                                backgroundColor: '#F5F5F5', padding: 15, borderRadius: 10, alignItems: 'center', 
+                                marginTop: 15, borderWidth: 1, borderColor: '#E0E0E0'
+                            }} 
+                            onPress={() => setAboutModalVisible(false)}
+                        >
+                            <Text style={{fontSize: 14, color: THEME.darkGray, fontFamily: 'Poppins_700Bold'}}>Close</Text>
+                        </TouchableOpacity>
+                    </View>
+                </View>
             </Modal>
         </View>
     );
@@ -987,22 +1176,22 @@ export default function DashboardScreen() {
       <View style={styles.customTabBar}>
         <TouchableOpacity style={styles.tabItem} onPress={() => setActiveTab('Home')}>
           <Feather name="home" size={24} color={activeTab === 'Home' ? THEME.primaryRed : '#999'} />
-          <Text style={[styles.tabLabel, { color: activeTab === 'Home' ? THEME.primaryRed : '#999' }]}>Home</Text>
+          <Text style={[styles.tabLabelText, { color: activeTab === 'Home' ? THEME.primaryRed : '#999' }]}>Home</Text>
         </TouchableOpacity>
 
         <TouchableOpacity style={styles.tabItem} onPress={() => setActiveTab('History')}>
           <Feather name="calendar" size={24} color={activeTab === 'History' ? THEME.primaryRed : '#999'} />
-          <Text style={[styles.tabLabel, { color: activeTab === 'History' ? THEME.primaryRed : '#999' }]}>History</Text>
+          <Text style={[styles.tabLabelText, { color: activeTab === 'History' ? THEME.primaryRed : '#999' }]}>History</Text>
         </TouchableOpacity>
 
         <TouchableOpacity style={styles.tabItem} onPress={() => setActiveTab('Contacts')}>
           <Feather name="phone" size={24} color={activeTab === 'Contacts' ? THEME.primaryRed : '#999'} />
-          <Text style={[styles.tabLabel, { color: activeTab === 'Contacts' ? THEME.primaryRed : '#999' }]}>Contacts</Text>
+          <Text style={[styles.tabLabelText, { color: activeTab === 'Contacts' ? THEME.primaryRed : '#999' }]}>Contacts</Text>
         </TouchableOpacity>
 
         <TouchableOpacity style={styles.tabItem} onPress={() => setActiveTab('Settings')}>
           <Feather name="settings" size={24} color={activeTab === 'Settings' ? THEME.primaryRed : '#999'} />
-          <Text style={[styles.tabLabel, { color: activeTab === 'Settings' ? THEME.primaryRed : '#999' }]}>Settings</Text>
+          <Text style={[styles.tabLabelText, { color: activeTab === 'Settings' ? THEME.primaryRed : '#999' }]}>Settings</Text>
         </TouchableOpacity>
       </View>
     </SafeAreaView>
@@ -1071,7 +1260,7 @@ const styles = StyleSheet.create({
     fontWeight: '500',
   },
   screenTitle: { fontSize: 28, fontFamily: 'Poppins_900Black', color: THEME.primaryRed, marginBottom: 20 },
-  sectionHeader: { fontSize: 14, fontFamily: 'Poppins_700Bold', color: THEME.primaryRed, marginTop: 20, marginBottom: 10 },
+  sectionHeader: { fontSize: 14, fontFamily: 'Poppins_700Bold', color: THEME.primaryRed, marginTop: 40, marginBottom: 10 },
   logItem: { backgroundColor: 'white', padding: 15, borderRadius: 10, marginBottom: 10, borderLeftWidth: 5, borderLeftColor: THEME.primaryRed },
   emergencyCardRed: { backgroundColor: THEME.primaryRed, padding: 20, borderRadius: 15, flexDirection: 'row', alignItems: 'center', justifyContent: 'center' },
   contactRow: { flexDirection: 'row', alignItems: 'center', backgroundColor: 'white', padding: 15, borderRadius: 12, marginBottom: 10, borderWidth: 1, borderColor: '#eee' },
@@ -1101,8 +1290,31 @@ const styles = StyleSheet.create({
   legendItem: { flexDirection: 'row', alignItems: 'center' },
   legendDot: { width: 8, height: 8, borderRadius: 4, marginRight: 6 },
   legendText: { fontSize: 10, fontFamily: 'Poppins_600SemiBold', color: '#666' },
-  customTabBar: { flexDirection: 'row', backgroundColor: THEME.background, borderTopColor: '#F0E0E0', borderTopWidth: 1, height: Platform.OS === 'ios' ? 85 : 65, paddingTop: 10, paddingBottom: Platform.OS === 'ios' ? 25 : 5 },
-  tabItem: { flex: 1, alignItems: 'center', justifyContent: 'center' },
+ customTabBar: { 
+    flexDirection: 'row', 
+    backgroundColor: THEME.surface, // Back to your clean cream/surface color
+    height: Platform.OS === 'ios' ? 85 : 70, 
+    paddingTop: 10, 
+    paddingBottom: Platform.OS === 'ios' ? 25 : 10,
+    borderTopLeftRadius: 24, 
+    borderTopRightRadius: 24,
+    shadowColor: '#000', // Standard subtle shadow
+    shadowOffset: { width: 0, height: -4 },
+    shadowOpacity: 0.05,
+    shadowRadius: 10,
+    elevation: 10,
+  },
+  tabItem: { 
+    flex: 1, 
+    alignItems: 'center', 
+    justifyContent: 'center' 
+  },
+  tabLabelText: {
+    fontSize: 10, 
+    fontFamily: 'Poppins_600SemiBold', 
+    marginTop: 4
+  },
   tabLabel: { fontSize: 10, fontFamily: 'Poppins_600SemiBold', marginTop: 4 },
-  
+  tabButtonAbout: { flex: 1, paddingVertical: 10, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
+  tabButtonAboutActive: { backgroundColor: THEME.primaryRed },
 });

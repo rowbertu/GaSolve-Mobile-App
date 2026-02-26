@@ -1,3 +1,10 @@
+import {
+  Poppins_400Regular,
+  Poppins_600SemiBold,
+  Poppins_700Bold,
+  Poppins_900Black,
+  useFonts
+} from '@expo-google-fonts/poppins';
 import { useRouter } from 'expo-router';
 import { sendPasswordResetEmail, signInWithEmailAndPassword } from 'firebase/auth';
 import { Eye, EyeOff, Lock, Mail } from 'lucide-react-native';
@@ -7,6 +14,7 @@ import {
   Image,
   Keyboard,
   KeyboardAvoidingView,
+  LogBox, // Added LogBox import
   Modal,
   Platform,
   ScrollView,
@@ -17,10 +25,32 @@ import {
   TouchableWithoutFeedback,
   View
 } from 'react-native';
-import { auth } from '../firebaseConfig'; // Make sure this path is correct!
+
+// You can keep these if you plan to fetch user data upon login, otherwise they aren't strictly needed for Auth
+import { auth } from '../firebaseConfig';
+
+LogBox.ignoreLogs(['Virtual Log', 'Text string must be rendered']);
+
+// --- DESIGN THEME ---
+const THEME = {
+  background: '#FFFBF5',    
+  primaryRed: '#b91c1c',    
+  safeGreen: '#10B981',     
+  cookingOrange: '#F59E0B', 
+  darkGray: '#37474F',   
+};
 
 export default function LoginScreen() {
   const router = useRouter();
+
+  // Load Fonts
+  const [fontsLoaded] = useFonts({
+    Poppins_400Regular,
+    Poppins_600SemiBold,
+    Poppins_700Bold,
+    Poppins_900Black,
+  });
+
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -29,9 +59,14 @@ export default function LoginScreen() {
   const [resetEmail, setResetEmail] = useState('');
   const [resetLoading, setResetLoading] = useState(false);
 
+  // Prevent rendering until fonts are loaded to avoid flickering or crashes
+  if (!fontsLoaded) {
+    return null;
+  }
+
   // Handle Standard Firebase Login
   const handleLogin = async () => {
-    Keyboard.dismiss(); // Hide keyboard for better UX
+    Keyboard.dismiss();
 
     const trimmedEmail = email.trim();
 
@@ -42,18 +77,13 @@ export default function LoginScreen() {
 
     setLoading(true);
     try {
-      // Sign in with Firebase
       await signInWithEmailAndPassword(auth, trimmedEmail, password);
       console.log("Logged in successfully!");
-      
-      // Navigate to the dashboard upon success
       router.replace('/dashboard'); 
-
     } catch (error: any) {
       console.error(error.code);
       let errorMessage = 'Login failed. Please try again.';
       
-      // Handle specific Firebase login errors
       switch (error.code) {
         case 'auth/invalid-credential':
         case 'auth/user-not-found':
@@ -68,7 +98,7 @@ export default function LoginScreen() {
           break;
       }
       
-      setPassword(''); // Clear password field on error
+      setPassword(''); 
       Alert.alert('Login Failed', errorMessage);
     } finally {
       setLoading(false);
@@ -120,7 +150,7 @@ export default function LoginScreen() {
     >
       <ScrollView 
         contentContainerStyle={styles.scrollContent}
-        keyboardShouldPersistTaps="handled" // Allows tapping the login button while keyboard is open
+        keyboardShouldPersistTaps="handled"
       >
         {/* --- TOP SECTION (Brand) --- */}
         <View style={styles.topSection}>
@@ -140,7 +170,7 @@ export default function LoginScreen() {
 
           {/* Email Input */}
           <View style={styles.inputContainer}>
-            <Mail color="#b91c1c" size={20} style={styles.icon} />
+            <Mail color={THEME.primaryRed} size={20} style={styles.icon} />
             <TextInput
               placeholder="Email Address"
               placeholderTextColor="#888"
@@ -156,7 +186,7 @@ export default function LoginScreen() {
 
           {/* Password Input */}
           <View style={styles.inputContainer}>
-            <Lock color="#b91c1c" size={20} style={styles.icon} />
+            <Lock color={THEME.primaryRed} size={20} style={styles.icon} />
             <TextInput
               placeholder="Password"
               placeholderTextColor="#888"
@@ -229,7 +259,7 @@ export default function LoginScreen() {
               </Text>
 
               <View style={styles.modalInputContainer}>
-                <Mail color="#b91c1c" size={20} style={styles.icon} />
+                <Mail color={THEME.primaryRed} size={20} style={styles.icon} />
                 <TextInput
                   placeholder="Email Address"
                   placeholderTextColor="#888"
@@ -272,7 +302,7 @@ export default function LoginScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#FDFBF7', 
+    backgroundColor: THEME.background, 
   },
   scrollContent: {
     flexGrow: 1,
@@ -290,37 +320,39 @@ const styles = StyleSheet.create({
   },
   brandTitle: {
     fontSize: 28,
-    fontWeight: 'bold',
-    color: '#b91c1c', 
+    fontFamily: 'Poppins_700Bold', // Updated
+    color: THEME.primaryRed, 
   },
   brandSubtitle: {
     fontSize: 14,
-    color: '#555',
+    color: THEME.primaryRed,
+    fontFamily: 'Poppins_600SemiBold', // Updated
     marginTop: 5,
   },
   bottomCard: {
-    flex: 1, // Expands to fill the bottom
-    backgroundColor: '#b91c1c', 
+    flex: 1,
+    backgroundColor: THEME.primaryRed, 
     borderTopLeftRadius: 30,
     borderTopRightRadius: 30,
     padding: 30,
     paddingTop: 40,
-    paddingBottom: 50, // Added padding for scroll breathing room
-    elevation: 10, 
+    paddingBottom: 50, 
+    elevation: 15, 
     shadowColor: '#000', 
-    shadowOffset: { width: 0, height: -2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 10,
+    shadowOffset: { width: 0, height: -5 },
+    shadowOpacity: 0.25,
+    shadowRadius: 15,
   },
   welcomeText: {
     fontSize: 24,
-    fontWeight: 'bold',
+    fontFamily: 'Poppins_700Bold', // Updated
     color: '#fff',
     marginBottom: 5,
   },
   instructionText: {
     fontSize: 14,
     color: '#ffcccc', 
+    fontFamily: 'Poppins_400Regular', // Updated
     marginBottom: 30,
   },
   inputContainer: {
@@ -338,7 +370,8 @@ const styles = StyleSheet.create({
   input: {
     flex: 1,
     fontSize: 16,
-    color: '#333',
+    color: THEME.darkGray,
+    fontFamily: 'Poppins_400Regular', // Updated
   },
   forgotContainer: {
     alignItems: 'flex-end',
@@ -347,9 +380,10 @@ const styles = StyleSheet.create({
   forgotText: {
     color: '#fff',
     textDecorationLine: 'underline',
+    fontFamily: 'Poppins_400Regular', // Updated
   },
   loginButton: {
-    backgroundColor: '#FDFBF7', 
+    backgroundColor: THEME.background, 
     borderRadius: 12,
     height: 55,
     justifyContent: 'center',
@@ -358,22 +392,23 @@ const styles = StyleSheet.create({
     elevation: 2,
   },
   loginButtonText: {
-    color: '#b91c1c',
+    color: THEME.primaryRed,
     fontSize: 18,
-    fontWeight: 'bold',
+    fontFamily: 'Poppins_700Bold', // Updated
   },
   signupContainer: {
     flexDirection: 'row',
     justifyContent: 'center',
-    marginTop: 30, // Pushes to bottom
+    marginTop: 30, 
   },
   signupText: {
     color: '#ffcccc',
+    fontFamily: 'Poppins_400Regular', // Updated
   },
   signupLink: {
     color: '#fff',
-    fontWeight: 'bold',
     textDecorationLine: 'underline',
+    fontFamily: 'Poppins_700Bold', // Updated
   },
   modalOverlay: {
     flex: 1,
@@ -401,19 +436,20 @@ const styles = StyleSheet.create({
   },
   modalTitle: {
     fontSize: 22,
-    fontWeight: 'bold',
-    color: '#b91c1c',
+    color: THEME.primaryRed,
+    fontFamily: 'Poppins_700Bold', // Updated
   },
   modalCloseBtn: {
     fontSize: 24,
     color: '#888',
-    fontWeight: 'bold',
+    fontFamily: 'Poppins_700Bold', // Updated
   },
   modalSubtitle: {
     fontSize: 14,
     color: '#555',
     marginBottom: 20,
     lineHeight: 20,
+    fontFamily: 'Poppins_400Regular', // Updated
   },
   modalInputContainer: {
     flexDirection: 'row',
@@ -429,11 +465,12 @@ const styles = StyleSheet.create({
   modalInput: {
     flex: 1,
     fontSize: 16,
-    color: '#333',
+    color: THEME.darkGray,
     marginLeft: 10,
+    fontFamily: 'Poppins_400Regular', // Updated
   },
   modalButton: {
-    backgroundColor: '#b91c1c',
+    backgroundColor: THEME.primaryRed,
     borderRadius: 12,
     height: 50,
     justifyContent: 'center',
@@ -443,12 +480,12 @@ const styles = StyleSheet.create({
   modalButtonText: {
     color: '#fff',
     fontSize: 16,
-    fontWeight: 'bold',
+    fontFamily: 'Poppins_700Bold', // Updated
   },
   modalCancelText: {
     textAlign: 'center',
-    color: '#b91c1c',
+    color: THEME.primaryRed,
     fontSize: 16,
-    fontWeight: '600',
+    fontFamily: 'Poppins_600SemiBold', // Updated
   },
 });
