@@ -7,14 +7,10 @@
     "icon": "./assets/images/RED_LOGO.png",
     "scheme": "lpgsafetyapp",
     "userInterfaceStyle": "automatic",
-    "newArchEnabled": true,
-    "notification": {
-      "icon": "./assets/images/RED_LOGO.png"
-    },
     "splash": {
       "image": "./assets/images/RED_LOGO.png",
       "resizeMode": "contain",
-      "backgroundColor": "#ffffff"
+      "backgroundColor": "#FFFBF5"
     },
     "ios": {
       "supportsTablet": true
@@ -24,7 +20,6 @@
         "backgroundColor": "#ffffff",
         "foregroundImage": "./assets/images/RED_LOGO.png"
       },
-      "edgeToEdgeEnabled": true,
       "package": "com.anonymous.LPGSafetyApp"
     },
     "web": {
@@ -33,6 +28,12 @@
     },
     "plugins": [
       "expo-router",
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/images/RED_LOGO.png"
+        }
+      ],
       [
         "expo-splash-screen",
         {

@@ -1,7 +1,11 @@
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { initializeApp } from "firebase/app";
-import { getAuth } from "firebase/auth";
-import { getDatabase } from "firebase/database"; // <-- ADDED: Realtime Database
-import { getFirestore } from "firebase/firestore";
+import {
+  getReactNativePersistence,
+  initializeAuth
+} from "firebase/auth";
+import { getDatabase } from "firebase/database";
+import { initializeFirestore } from "firebase/firestore";
 
 const firebaseConfig = {
   apiKey: "AIzaSyA4SEScjZ0mPkTghVk0a1cV4rIics3b77U",
@@ -13,13 +17,20 @@ const firebaseConfig = {
   appId: "1:340385020318:web:0f6c7cbdc33eb91bc47e8f",
 };
 
-// Initialize Firebase
+// 1. Initialize Firebase App
 const app = initializeApp(firebaseConfig);
 
-// Initialize Services
-const auth = getAuth(app);
-const db = getFirestore(app); // For user accounts (Firestore)
-const rtdb = getDatabase(app); // For live gas sensors (Realtime Database)
+// 2. Initialize Auth with Persistence (Stay Logged In)
+const auth = initializeAuth(app, {
+  persistence: getReactNativePersistence(AsyncStorage),
+});
 
-// Export all three!
+// 3. Initialize Realtime Database
+const rtdb = getDatabase(app);
+
+// 4. Initialize Firestore with Long Polling (Stable Connection)
+const db = initializeFirestore(app, {
+  experimentalForceLongPolling: true, 
+});
+
 export { auth, db, rtdb };

@@ -1,48 +1,56 @@
 import { Feather, Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import { Audio } from 'expo-av';
 import * as Notifications from 'expo-notifications';
-import { useRouter } from 'expo-router'; // Added for Logout Navigation
-import { EmailAuthProvider, reauthenticateWithCredential, signOut, updatePassword } from 'firebase/auth'; // Added for Logout
+import { useRouter } from 'expo-router';
+import { EmailAuthProvider, reauthenticateWithCredential, signOut, updatePassword } from 'firebase/auth';
 import { limitToLast, onValue, orderByChild, push, query, ref, remove, update } from "firebase/database";
 import React, { useEffect, useRef, useState } from "react";
 import {
-    Alert,
-    Dimensions,
-    FlatList,
-    Image,
-    Keyboard,
-    Linking,
-    LogBox,
-    Modal,
-    Platform,
-    ScrollView,
-    StatusBar,
-    StyleSheet,
-    Text,
-    TextInput,
-    TouchableOpacity,
-    TouchableWithoutFeedback,
-    Vibration,
-    View
+  Alert,
+  Dimensions,
+  Image,
+  Keyboard,
+  Linking,
+  LogBox,
+  Modal,
+  Platform,
+  StatusBar,
+  StyleSheet,
+  Switch,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  TouchableWithoutFeedback,
+  Vibration,
+  View
 } from "react-native";
+
+// --- CRITICAL FIX 1: Import Lists from Gesture Handler ---
+import {
+  FlatList,
+  GestureHandlerRootView,
+  ScrollView,
+  Swipeable
+} from 'react-native-gesture-handler';
+
 import { LineChart } from "react-native-chart-kit";
 import { Dropdown } from 'react-native-element-dropdown';
-import { GestureHandlerRootView, Swipeable } from 'react-native-gesture-handler';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import GasValveButton from "../components/gas-valve-button";
 
 import {
-    Poppins_400Regular,
-    Poppins_600SemiBold,
-    Poppins_700Bold,
-    Poppins_900Black,
-    useFonts
+  Poppins_400Regular,
+  Poppins_600SemiBold,
+  Poppins_700Bold,
+  Poppins_900Black,
+  useFonts
 } from '@expo-google-fonts/poppins';
 
-import { doc, getDoc, updateDoc } from 'firebase/firestore'; // <-- Add this line
-import { auth, db, rtdb } from "../firebaseConfig"; // <-- Make sure 'db' is included here
+import { doc, getDoc, updateDoc } from 'firebase/firestore';
+import { auth, db, rtdb } from "../firebaseConfig";
 
-LogBox.ignoreLogs(['Virtual Log', 'Text string must be rendered']);
+LogBox.ignoreLogs(['Virtual Log', 'Text string must be rendered', 'defaultProps will be removed']);
+
+const sirenSound = require('../assets/sounds/siren.mp3');
 
 // --- DESIGN THEME ---
 const THEME = {
@@ -53,7 +61,7 @@ const THEME = {
   darkGray: '#37474F',      
   white: '#FFFFFF',
   surface: '#FFFBF5',
-  editBlue: '#3B82F6', 
+  edit: '#888181', 
 };
 
 // --- NOTIFICATION CONFIG ---
@@ -65,6 +73,16 @@ Notifications.setNotificationHandler({
     shouldSetBadge: true,
   }),
 });
+
+Notifications.setNotificationCategoryAsync('emergency_alert', [
+  {
+    identifier: 'silence_action',
+    buttonTitle: 'Silence Alarm 🔕',
+    options: {
+      opensAppToForeground: true,
+    },
+  },
+]);
 
 // ==========================================
 // 1. COMPONENTS
@@ -180,7 +198,14 @@ async function registerForPushNotificationsAsync() {
 
 async function sendLocalNotification(title: string, body: string) {
   await Notifications.scheduleNotificationAsync({
-    content: { title, body, sound: true, priority: Notifications.AndroidNotificationPriority.MAX },
+    content: { 
+      title, 
+      body, 
+      sound: true, 
+      priority: Notifications.AndroidNotificationPriority.MAX,
+      sticky: true, 
+      categoryIdentifier: 'emergency_alert', 
+    },
     trigger: null,
   });
 }
@@ -229,21 +254,56 @@ function HomeScreen() {
   const [valveOpen, setValveOpen] = useState(true);
   const [systemStatus, setSystemStatus] = useState("");
   const [threshold, setThreshold] = useState(1000); 
-  
+  const [testMode, setTestMode] = useState(false);
+
   const isAlertActive = useRef(false);
   const wasInEmergency = useRef(false);
+  const wasCooking = useRef(false);
   const soundObject = useRef(new Audio.Sound());
+  const [manualMute, setManualMute] = useState(false); 
+
+  useEffect(() => {
+  const user = auth.currentUser;
+  if (user) {
+    console.log("✅ PERSISTENCE WORKING: logged in as", user.email);
+  } else {
+    console.log("❌ NOT LOGGED IN: user is null");
+  }
+}, []);
   
   useEffect(() => {
+    let isMounted = true;
     async function setupAudio() {
       try {
         await Audio.setAudioModeAsync({
-          allowsRecordingIOS: false, playsInSilentModeIOS: true, staysActiveInBackground: true, shouldDuckAndroid: true, playThroughEarpieceAndroid: false,
+          allowsRecordingIOS: false, 
+          playsInSilentModeIOS: true, 
+          staysActiveInBackground: true, 
+          shouldDuckAndroid: true, 
+          playThroughEarpieceAndroid: false,
         });
-      } catch (e) { console.log("Audio Setup Error:", e); }
-    }
-    setupAudio();
-  }, []);
+
+        const status = await soundObject.current.getStatusAsync();
+        
+          if (!status.isLoaded && isMounted) {
+            await soundObject.current.loadAsync(sirenSound, { 
+              shouldPlay: false, 
+              isLooping: true, 
+              volume: 1.0 
+            });
+            }
+          } catch (e:any) { 
+            console.log("Audio Setup Error:", e.message); 
+          }
+        }
+
+        setupAudio();
+
+        return () => {
+          isMounted = false;
+          soundObject.current.unloadAsync();
+        };
+      }, []);
 
   useEffect(() => {
     const refs = {
@@ -251,109 +311,173 @@ function HomeScreen() {
       weight: ref(rtdb, "Home_01/Live_Status/Weight_KG"),
       valve: ref(rtdb, "Home_01/Live_Status/Valve_State"),
       statusText: ref(rtdb, "Home_01/Live_Status/Status"),
-      limit: ref(rtdb, "Home_01/Live_Status/Settings/Threshold") 
+      limit: ref(rtdb, "Home_01/Live_Status/Settings/Threshold"), 
+      simulation: ref(rtdb, "Home_01/Live_Status/Settings/Test_Mode")
     };
-    onValue(refs.gas, (s) => s.exists() && setGasLevel(Number(s.val())));
-    onValue(refs.weight, (s) => s.exists() && setWeight(Number(s.val())));
-    onValue(refs.valve, (s) => s.exists() && setValveOpen(s.val() === 1 || s.val() === true));
-    onValue(refs.statusText, (s) => s.exists() && setSystemStatus(s.val()));
-    onValue(refs.limit, (s) => s.exists() && setThreshold(Number(s.val())));
+
+    // Store unsubs for cleanup
+    const unsubs = [
+        onValue(refs.gas, (s) => s.exists() && setGasLevel(Number(s.val()))),
+        onValue(refs.weight, (s) => s.exists() && setWeight(Number(s.val()))),
+        onValue(refs.valve, (s) => s.exists() && setValveOpen(s.val() === 1 || s.val() === true)),
+        onValue(refs.statusText, (s) => s.exists() && setSystemStatus(s.val())),
+        onValue(refs.limit, (s) => s.exists() && setThreshold(Number(s.val()))),
+        onValue(refs.simulation, (s) => s.exists() && setTestMode(s.val() === true))
+    ];
+
+    return () => {
+        unsubs.forEach(unsubscribe => unsubscribe());
+    };
   }, []);
 
   useEffect(() => {
-    const checkSafety = async () => {
-      const statusRef = ref(rtdb, "Home_01/Live_Status");
+   const checkSafety = async () => {
+     const statusRef = ref(rtdb, "Home_01/Live_Status");
+     const effectiveGasLevel = testMode ? (threshold + 50) : gasLevel;
 
-      // --- 1. DANGER ZONE ---
-      if (gasLevel >= threshold) {
-        wasInEmergency.current = true;
-        
-        update(statusRef, {
-          Valve_State: 0,
-          Status: "⚠️ High gas levels detected. Follow the safety instructions immediately."
-        });
-        
-        if (!isAlertActive.current) {
-          isAlertActive.current = true;
-          await playSiren();
-          const monthKey = new Date().toISOString().slice(0, 7); // YYYY-MM format
-          push(ref(rtdb, `Home_01/History/${monthKey}`), {
-            event: "⚠️ GAS LEAK DETECTED",
-            timestamp: Date.now(),
-            details: `Gas level reached ${gasLevel} PPM.`
-          });
-        }
-      } 
-      // --- 2. SAFE ZONE ---
-      else if (gasLevel < (threshold - 100)) {
-        
-        if (wasInEmergency.current) {
-          update(statusRef, {
-            Valve_State: 1,
-            Status: "🔄 Gas Restored: Reopening Valve"
-          });
-          wasInEmergency.current = false;
-        } else {
-          update(statusRef, {
-            Status: "✅ No leaks detected. Environment is secure."
-          });
-        }
+     // 🔴 1. LEAK ZONE (Above Threshold)
+     if (effectiveGasLevel >= threshold) {
+       if (!wasInEmergency.current) {
+         wasInEmergency.current = true;
+         wasCooking.current = false; // Reset cooking flag
+         
+         push(ref(rtdb, `Home_01/History`), {
+             event: testMode ? "⚠️ SIMULATED LEAK DETECTED" : "⚠️ GAS LEAK WARNING",
+             timestamp: Date.now(),
+             ppm: Number(effectiveGasLevel.toFixed(0)),
+             details: `Gas level reached ${effectiveGasLevel.toFixed(0)} PPM.`
+         });
+       }
+       
+       update(statusRef, {
+         Valve_State: 0,
+         Status: testMode 
+           ? "🛡️ SIMULATION MODE: Emergency procedures active." 
+           : "⚠️ High gas levels detected. Follow the safety instructions immediately."
+       });
 
-        if (isAlertActive.current) {
-          isAlertActive.current = false;
-          await stopSiren();
-        }
+       if (!isAlertActive.current && !manualMute) {
+         isAlertActive.current = true;
+         await playSiren(); 
+         
+         sendLocalNotification(
+           testMode ? "GASOLVE SIMULATION" : "⚠️ GAS LEAK WARNING", 
+           testMode ? "Simulating emergency response." : "High gas levels detected! Valve closed."
+         );
+       }
+     } 
+     
+     // 🟠 2. COOKING ZONE (Between 250 and Threshold)
+     else if (effectiveGasLevel >= 250) {
+       // Only log if we weren't already cooking and weren't in an emergency
+       if (!wasCooking.current && !wasInEmergency.current) {
+         wasCooking.current = true; 
+         
+         // Push the Cooking Event to History!
+         push(ref(rtdb, `Home_01/History`), {
+             event: "🔥 COOKING ACTIVITY",
+             timestamp: Date.now(),
+             ppm: Number(effectiveGasLevel.toFixed(0)),
+             details: `Gas level elevated to ${effectiveGasLevel.toFixed(0)} PPM.`
+         });
+       }
+
+       update(statusRef, {
+         Valve_State: 1,
+         Status: "🔥 Gas is being used. Levels are elevated but safe."
+       });
+
+       // Stop alarms if gas went down from a leak to cooking
+       if (isAlertActive.current || manualMute) {
+         isAlertActive.current = false;
+         setManualMute(false);
+         await stopSiren();
+       }
+     } 
+     
+     // 🟢 3. SAFE ZONE (Below 250)
+     else {
+       // Reset the cooking tracker when the air clears
+       wasCooking.current = false; 
+
+       if (wasInEmergency.current) {
+         update(statusRef, {
+           Valve_State: 1,
+           Status: "🔄 Gas Restored: Reopening Valve"
+         });
+         wasInEmergency.current = false;
+       } else {
+         update(statusRef, {
+           Valve_State: 1,
+           Status: "✅ No leaks detected. Environment is secure."
+         });
+       }
+
+       if (isAlertActive.current || manualMute) {
+         isAlertActive.current = false;
+         setManualMute(false);
+         await stopSiren();
+       }
+     }
+   };
+
+   checkSafety();
+}, [gasLevel, threshold, testMode, manualMute]);
+
+  useEffect(() => {
+    const responseListener = Notifications.addNotificationResponseReceivedListener(async (response) => {
+      const actionId = response.actionIdentifier;
+      if (actionId === 'silence_action' || actionId === Notifications.DEFAULT_ACTION_IDENTIFIER) {
+        setManualMute(true); 
+        await stopSiren(); 
       }
-      // --- 3. COOKING ZONE ---
-      else {
-        update(statusRef, {
-          Valve_State: 1,
-          Status: "🔥 Gas is being used. Levels are elevated but within normal range."
-        });
-      }
+    });
+
+    return () => {
+      responseListener.remove();
     };
-
-    checkSafety();
-  }, [gasLevel, threshold]); 
+  }, []);
 
   async function playSiren() {
     try {
       const status = await soundObject.current.getStatusAsync();
-      if (!status.isLoaded) {
-          await soundObject.current.loadAsync(
-              { uri: 'https://cdn.pixabay.com/audio/2022/10/16/audio_a15f013bd8.mp3' }, 
-              { shouldPlay: true, isLooping: true, volume: 1.0 }
-          );
-      } else {
-          await soundObject.current.playAsync();
+      if (status.isLoaded && !status.isPlaying && !manualMute) {
+        await soundObject.current.playAsync();
+        Vibration.vibrate([0, 500, 500], true);
+        await soundObject.current.setIsLoopingAsync(true);
       }
-      Vibration.vibrate([0, 500, 500], true); 
-    } catch (error) { console.log("Play Error:", error); }
+    } catch (error) {}
   }
 
   async function stopSiren() {
     try {
-        const status = await soundObject.current.getStatusAsync();
-        if (status.isLoaded) {
-            await soundObject.current.stopAsync();
-            await soundObject.current.unloadAsync();
-        }
-        Vibration.cancel();
-    } catch (error) { console.log("Stop Error:", error); }
+      const status = await soundObject.current.getStatusAsync();
+      if (status.isLoaded) {
+        await soundObject.current.stopAsync();
+      }
+      Vibration.cancel();
+    } catch (error) {}
   }
 
- let mode = "SAFE"; 
+  const handleStopSiren = async () => {
+    Vibration.vibrate(100); 
+    setManualMute(true);
+    await stopSiren();
+  };
+
+  let currentDisplayValue = testMode ? threshold + 61 : gasLevel;
+  let mode = "SAFE"; 
   let primaryColor = THEME.safeGreen;
   let statusTitle = "SAFE";
   let statusDesc = systemStatus || "No leaks detected. Environment is secure."; 
 
   let statusIcon: any = valveOpen ? "shield-check" : "lock";
 
-  if (gasLevel >= threshold) {
+  if (testMode || gasLevel >= threshold) {
       mode = "WARNING"; 
       primaryColor = THEME.primaryRed; 
-      statusTitle = "WARNING"; 
-      statusDesc = systemStatus || "High gas levels detected. Valve closed immediately."; 
+      statusTitle = testMode ? "SIMULATION" : "WARNING"; 
+      statusDesc = systemStatus; 
       statusIcon = "alert-octagon";
   } else if (gasLevel >= 250) {
       mode = "COOKING"; 
@@ -363,7 +487,7 @@ function HomeScreen() {
       statusIcon = "fire";
   }
   
- const toggleValve = () => {
+  const toggleValve = () => {
     if (gasLevel >= threshold) {
       Alert.alert("Safety Lock", "Cannot open valve during a gas leak!");
       return;
@@ -375,24 +499,18 @@ function HomeScreen() {
       "Confirm Action",
       `Are you sure you want to ${actionWord} the gas valve?`,
       [
-        {
-          text: "Cancel",
-          style: "cancel",
-        },
+        { text: "Cancel", style: "cancel" },
         {
           text: "Yes, I'm sure",
           style: valveOpen ? "destructive" : "default",
           onPress: () => {
-            // 3. FIREBASE UPDATE (Runs only if they confirm)
             const newState = valveOpen ? 0 : 1;
             update(ref(rtdb, "Home_01/Live_Status"), {
               Valve_State: newState,
               Status: newState === 1 ? "Valve Opened." : "Valve manually closed."
             });
 
-            // 4. LOG TO HISTORY BY MONTH
-            const monthKey = new Date().toISOString().slice(0, 7); // YYYY-MM format
-            const historyRef = ref(rtdb, `Home_01/History/${monthKey}`);
+            const historyRef = ref(rtdb, `Home_01/History`);
             const eventMsg = newState === 1 ? "🔓 VALVE OPENED MANUALLY" : "🔒 VALVE CLOSED MANUALLY";
             const details = newState === 1 ? `Valve restored. Gas level at ${gasLevel} PPM.` : `Valve closed by user. Gas level at ${gasLevel} PPM.`;
             
@@ -402,7 +520,6 @@ function HomeScreen() {
               details: details
             });
 
-            // 5. RESET EMERGENCY STATE IF OPENING
             if (newState === 1) {
               wasInEmergency.current = false;
             }
@@ -420,7 +537,8 @@ function HomeScreen() {
       <SimpleHeader />
       <ScrollView contentContainerStyle={{ padding: 20, paddingBottom: 100 }}>
         <DashboardDateHeader />
-        <CenteredGauge value={gasLevel} max={threshold} colorMode={primaryColor} />
+        
+        <CenteredGauge value={currentDisplayValue} max={threshold} colorMode={primaryColor} />
 
         <View style={[styles.statusBanner, { backgroundColor: primaryColor }]}>
             <View style={{flexDirection:'row', alignItems:'center', justifyContent:'center'}}>
@@ -431,41 +549,104 @@ function HomeScreen() {
             {mode !== "SAFE" && (
                 <View style={styles.trendTag}>
                     <Feather name="trending-up" size={16} color={primaryColor} />
-                    <Text style={{color: primaryColor, fontWeight:'bold', marginLeft:5}}>GAS RISING TREND</Text>
+                    <Text style={{color: primaryColor, fontWeight:'bold', marginLeft:5}}>
+                      {testMode ? "SIMULATED TREND" : "GAS RISING TREND"}
+                    </Text>
                 </View>
             )}
         </View>
 
-        {mode === "WARNING" ? (
-            <View style={{marginTop: 20}}>
+            {mode === "WARNING" ? (
+              <View style={{ marginTop: 20 }}>
                 <SafetyInstructions />
-                <TouchableOpacity style={styles.emergencyBtnLarge} onPress={() => Linking.openURL('tel:911')}>
-                    <Text style={styles.emergencyBtnText}>CALL EMERGENCY (911)</Text>
-                </TouchableOpacity>
-            </View>
-        ) : (
-            <View style={{marginTop: 20}}>
-                <GasValveButton valveOpen={valveOpen} onToggle={toggleValve} />
 
-                <View style={styles.controlCard}>
-                    <View style={{flexDirection:'row', alignItems:'center', flex:1}}>
-                        <View style={[styles.iconBox, {backgroundColor: '#FFF3E0'}]}>
-                            <MaterialCommunityIcons name="gas-cylinder" size={24} color={THEME.cookingOrange} />
-                        </View>
-                        <View style={{marginLeft: 15, flex: 1}}>
-                            <View style={{flexDirection:'row', justifyContent:'space-between', marginBottom: 5}}>
-                                <Text style={styles.cardLabel}>Tank Level</Text>
-                                <Text style={{fontWeight:'bold', color: THEME.primaryRed}}>{weight.toFixed(1)} kg</Text>
-                            </View>
-                            <View style={styles.progressBarBg}>
-                                <View style={[styles.progressBarFill, {width: `${weightPercent}%`}]} />
-                            </View>
-                        </View>
-                    </View>
+                <TouchableOpacity 
+                  style={[styles.emergencyBtnLarge, { marginTop: 10 }]} 
+                  onPress={() => Linking.openURL('tel:911')}
+                >
+                  <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                    <Ionicons name="call" size={24} color="white" style={{ marginRight: 10 }} />
+                    <Text style={styles.emergencyBtnText}>CALL EMERGENCY (911)</Text>
+                  </View>
+                </TouchableOpacity>
+              </View>
+            ) : (
+              <View style={{ marginTop: 20 }}>
+                <View style={styles.valveToggleContainer}>
+                  <MaterialCommunityIcons
+                    name={valveOpen ? 'lock-open-variant-outline' : 'lock-outline'}
+                    size={30}
+                    color={valveOpen ? THEME.cookingOrange : THEME.safeGreen}
+                    style={{ marginRight: 20 }}
+                  />
+                  <View style={{ flex: 1, justifyContent: 'center' }}>
+                    <Text style={styles.valveToggleTitle}>Gas Valve</Text>
+                    <Text style={styles.valveToggleSubtitle}>{valveOpen ? 'OPEN' : 'CLOSED'}</Text>
+                  </View>
+                  <Switch
+                    trackColor={{ false: THEME.safeGreen, true: THEME.primaryRed }}
+                    thumbColor={'#FFFFFF'}
+                    ios_backgroundColor={THEME.safeGreen}
+                    onValueChange={toggleValve} 
+                    value={valveOpen}
+                    style={{ transform: [{ scaleX: 1.1 }, { scaleY: 1.1 }] }}
+                  />
                 </View>
-            </View>
-        )}
+                
+                <View style={styles.controlCard}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                    <View style={[styles.iconBox, { backgroundColor: '#FFF0F0' }]}>
+                      <MaterialCommunityIcons name="gas-cylinder" size={24} color={THEME.primaryRed} />
+                    </View>
+                    <View style={{ marginLeft: 15 }}>
+                      <Text style={styles.cardLabel}>Tank Level</Text>
+                      <Text style={{ fontSize: 12, color: '#757575', fontFamily: 'Poppins_600SemiBold' }}>
+                        {weight.toFixed(1)} kg / 11 kg
+                      </Text>
+                    </View>
+                  </View>
+                  <View style={{ alignItems: 'flex-end' }}>
+                    <Text style={{ fontSize: 20, fontFamily: 'Poppins_700Bold', color: THEME.darkGray }}>
+                      {weightPercent.toFixed(0)}%
+                    </Text>
+                  </View>
+                </View>
+              </View>
+            )}
       </ScrollView>
+
+      <Modal 
+          visible={mode === 'WARNING' && !manualMute} 
+          transparent={true} 
+          animationType="slide"
+      >
+        <View style={styles.popupOverlay}>
+          <View style={styles.popupContainer}>
+            
+            <View style={styles.popupHeader}>
+              <Ionicons name="warning" size={26} color="white" />
+              <Text style={styles.popupHeaderText}>SAFETY ALERT</Text>
+            </View>
+
+            <View style={styles.popupBody}>
+              <Text style={styles.popupTitle}>
+                 Gas Leak Detected ({currentDisplayValue.toFixed(0)} PPM)
+              </Text>
+              
+              <Text style={{ fontFamily: 'Poppins_400Regular', fontSize: 13, color: '#555', textAlign: 'center', marginBottom: 25, marginTop: 5 }}>
+                 Valve closed. Silence the alarm to view the safety instructions.
+              </Text>
+
+              <TouchableOpacity style={styles.popupMuteBtn} onPress={handleStopSiren}>
+                <MaterialCommunityIcons name="volume-mute" size={24} color="white" />
+                <Text style={styles.popupMuteBtnText}>Stop Siren</Text>
+              </TouchableOpacity>
+            </View>
+
+          </View>
+        </View>
+      </Modal>
+
     </View>
   );
 }
@@ -473,39 +654,82 @@ function HomeScreen() {
 function HistoryScreen() {
   const [logs, setLogs] = useState<any[]>([]);
   const [timeframe, setTimeframe] = useState('daily');
-  const [chartLabels, setChartLabels] = useState<string[]>([]);
-  const [chartData, setChartData] = useState<number[]>([]);
+  const [chartData, setChartData] = useState<number[]>(new Array(6).fill(0));
 
-  const loadSimulatedData = () => {
-    if (timeframe === 'daily') {
-        setChartLabels(["12 AM", "4 AM", "8 AM", "12 PM", "4 PM", "8 PM"]);
-        setChartData([50, 150, 600, 1200, 450, 80]);
-    } else {
-        setChartLabels(["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]);
-        setChartData([120, 180, 550, 1300, 400, 90, 60]);
-    }
-  };
+  // 1. Keep your static labels defined
+  const dailyLabels = ["12 AM", "4 AM", "8 AM", "12 PM", "4 PM", "8 PM"];
+  const weeklyLabels = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+  const currentLabels = timeframe === 'daily' ? dailyLabels : weeklyLabels;
 
-  useEffect(() => {
-    loadSimulatedData();
-    const monthKey = new Date().toISOString().slice(0, 7); // Current month YYYY-MM
-    const historyRef = ref(rtdb, `Home_01/History/${monthKey}`);
-    const q = query(historyRef, orderByChild('timestamp'), limitToLast(50));
-    onValue(q, (snapshot) => {
+ useEffect(() => {
+    const historyRef = ref(rtdb, `Home_01/History`);
+    
+    // INCREASED TO 100 so it grabs enough data to see the cooking events!
+    const q = query(historyRef, orderByChild('timestamp'), limitToLast(100));
+
+    const unsubscribe = onValue(q, (snapshot) => {
       if (snapshot.exists()) {
         const data = snapshot.val();
-        setLogs(Object.keys(data).map(k => ({id:k, ...data[k]})).sort((a,b)=>b.timestamp - a.timestamp));
+        
+        // 1. Fetch all logs
+        const fetchedLogs = Object.keys(data)
+          .map(k => ({ id: k, ...data[k] }))
+          .sort((a, b) => b.timestamp - a.timestamp);
+
+        setLogs(fetchedLogs);
+
+        // 2. Map the PPM numbers to the chart slots
+        const newData = new Array(currentLabels.length).fill(0);
+
+        fetchedLogs.forEach(log => {
+          const date = new Date(log.timestamp);
+          let index = -1;
+
+          if (timeframe === 'daily') {
+            const hour = date.getHours();
+            index = Math.floor(hour / 4); // Maps to 12AM, 4AM, 8AM, etc.
+          } else {
+            const day = date.getDay(); 
+            index = day === 0 ? 6 : day - 1; // Maps to Mon, Tue, Wed, etc.
+          }
+
+          if (index >= 0 && index < newData.length) {
+            // This plots the dot! If log.ppm is 400 (cooking), it puts it on the graph.
+            newData[index] = Math.max(newData[index], log.ppm || 0);
+          }
+        });
+
+        setChartData(newData);
       } else {
         setLogs([]);
+        setChartData(new Array(currentLabels.length).fill(0));
       }
     });
+
+    return () => unsubscribe();
   }, [timeframe]);
+
+  const handleDeleteLog = (id: string) => {
+    Alert.alert("Delete Log", "Are you sure you want to remove this activity log?", [
+      { text: "Cancel", style: "cancel" },
+      { text: "Delete", style: "destructive", onPress: () => remove(ref(rtdb, `Home_01/History/${id}`)) }
+    ]);
+  };
+
+  const renderRightActions = (id: string) => (
+    <View style={{ width: 85, paddingBottom: 10 }}>
+      <TouchableOpacity onPress={() => handleDeleteLog(id)} style={styles.deleteAction}>
+        <Feather name="trash-2" size={24} color="white" />
+        <Text style={{ color: 'white', fontWeight: 'bold', fontSize: 10, marginTop: 4 }}>Delete</Text>
+      </TouchableOpacity>
+    </View>
+  );
 
   const renderHeader = () => {
     return (
-     <View style={{ marginBottom: 20 }}>
+      <View style={{ marginBottom: 20 }}>
         <Text style={styles.screenTitle}>ANALYTICS</Text>
-        
+
         <View style={styles.tabContainer}>
           <TouchableOpacity style={[styles.tab, timeframe === 'daily' && styles.tabActive]} onPress={() => setTimeframe('daily')}>
             <Text style={[styles.tabText, timeframe === 'daily' && styles.tabTextActive]}>Daily</Text>
@@ -516,61 +740,93 @@ function HistoryScreen() {
         </View>
 
         <View style={{ backgroundColor: 'white', borderRadius: 16, paddingBottom: 10, elevation: 4, shadowColor: THEME.primaryRed, shadowOpacity: 0.1 }}>
-         {chartData.length > 0 && chartLabels.length > 0 && (
-        <LineChart
-          data={{
-            labels: chartLabels,
-            datasets: [
-              { data: chartData, color: (opacity = 1) => `rgba(55, 71, 79, ${opacity})`, strokeWidth: 4, withDots: true },
-              { data: new Array(chartLabels.length).fill(1000), color: () => THEME.primaryRed, strokeWidth: 2, withDots: false, strokeDashArray: [10, 5] },
-              { data: new Array(chartLabels.length).fill(250), color: () => THEME.cookingOrange, strokeWidth: 2, withDots: false, strokeDashArray: [10, 5] },
-              { data: new Array(chartLabels.length).fill(100), color: () => THEME.safeGreen, strokeWidth: 2, withDots: false, strokeDashArray: [10, 5] }
-            ]
-          }}
-          width={Dimensions.get("window").width - 40} height={240} fromZero
-          chartConfig={{
-            backgroundColor: "#fff", backgroundGradientFrom: "#fff", backgroundGradientTo: "#fff", decimalPlaces: 0,
-            color: (opacity = 1) => `rgba(0, 0, 0, ${opacity})`, labelColor: () => THEME.darkGray,
-            fillShadowGradientFrom: "white", fillShadowGradientTo: "white", fillShadowGradientOpacity: 0,
-            propsForBackgroundLines: { strokeDasharray: "", stroke: "#F5F5F5" }
-          }}
-          bezier style={{ borderRadius: 16, marginTop: 10 }}
-        />
-      )}
-            <View style={styles.legendContainer}>
-                <View style={styles.legendItem}><View style={[styles.legendDot, { backgroundColor: THEME.safeGreen }]} /><Text style={styles.legendText}>Safe</Text></View>
-                <View style={styles.legendItem}><View style={[styles.legendDot, { backgroundColor: THEME.cookingOrange }]} /><Text style={styles.legendText}>In Use</Text></View>
-                <View style={styles.legendItem}><View style={[styles.legendDot, { backgroundColor: THEME.primaryRed }]} /><Text style={styles.legendText}>Warning</Text></View>
-            </View>
+         <LineChart
+            data={{
+              labels: currentLabels,
+              datasets: [
+                { data: new Array(currentLabels.length).fill(1200), color: () => 'transparent', strokeWidth: 0, withDots: false },
+                { data: new Array(currentLabels.length).fill(1000), color: () => THEME.primaryRed, strokeWidth: 2, withDots: false, strokeDashArray: [6, 6] },
+                { data: new Array(currentLabels.length).fill(250), color: () => THEME.cookingOrange, strokeWidth: 2, withDots: false, strokeDashArray: [6, 6] },
+                { data: new Array(currentLabels.length).fill(100), color: () => THEME.safeGreen, strokeWidth: 2, withDots: false, strokeDashArray: [6, 6] },
+                { data: chartData, color: () => '#D1D5DB', strokeWidth: 4, withDots: true }
+              ]
+            }}
+            width={Dimensions.get("window").width - 20}
+            height={260}
+            fromZero
+            withShadow={false}
+            yLabelsOffset={30}
+            withOuterLines={false} 
+            segments={4} 
+            onDataPointClick={({ value, index }) => {
+              if (value === 1200 && value !== chartData[index]) return; 
+              
+              const timeLabel = currentLabels[index];
+              let status = value >= 1000 ? "⚠️ DANGER (Leak)" : value >= 250 ? "🔥 IN USE (Cooking)" : "✅ SAFE";
+              Alert.alert(`${timeLabel} Analytics`, `Highest Level: ${value} PPM\nStatus: ${status}`);
+            }}
+            chartConfig={{
+              backgroundColor: "#fff",
+              backgroundGradientFrom: "#fff",
+              backgroundGradientTo: "#fff",
+              decimalPlaces: 0,
+              fillShadowGradientOpacity: 0, 
+              color: (opacity = 1) => `rgba(0, 0, 0, ${opacity})`,
+              labelColor: () => THEME.darkGray,
+              propsForDots: {
+                r: "5",
+                strokeWidth: "2",
+                stroke: "#fff",
+                fill: THEME.darkGray 
+              },
+              propsForBackgroundLines: {
+                stroke: "#F5F5F5", 
+                strokeDasharray: "" 
+              }
+            }}
+            bezier
+            style={{ borderRadius: 16, marginTop: 10, paddingRight: 60, paddingLeft: 40 }}
+          />
+          <View style={styles.legendContainer}>
+            <View style={styles.legendItem}><View style={[styles.legendDot, { backgroundColor: THEME.safeGreen }]} /><Text style={styles.legendText}>Safe</Text></View>
+            <View style={styles.legendItem}><View style={[styles.legendDot, { backgroundColor: THEME.cookingOrange }]} /><Text style={styles.legendText}>In Use</Text></View>
+            <View style={styles.legendItem}><View style={[styles.legendDot, { backgroundColor: THEME.primaryRed }]} /><Text style={styles.legendText}>Warning</Text></View>
+          </View>
         </View>
         <Text style={styles.sectionHeader}>RECENT ACTIVITY</Text>
-     </View>
+      </View>
     );
   };
 
   return (
     <View style={styles.screenContainer}>
-        <SimpleHeader />
-        <FlatList
-            data={logs.slice(0, 5)} // This cuts the list down to just the first 3 items
-            keyExtractor={i => i.id} ListHeaderComponent={renderHeader} contentContainerStyle={{ padding: 20 }}
-            renderItem={({ item }) => (
-                <View style={styles.logItem}>
-                    <Text style={{ fontFamily: 'Poppins_700Bold', color: THEME.darkGray }}>{item.event}</Text>
-                    {item.details && (
-                      <Text style={{ fontSize: 12, color: THEME.darkGray, marginTop: 4 }}>
-                        {item.details}
-                      </Text>
-                    )}
-                    <Text style={{ fontSize: 12, color: THEME.primaryRed, marginTop: 4 }}>
-                      {timeframe === 'daily' 
-                        ? new Date(item.timestamp).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })
-                        : new Date(item.timestamp).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true })
-                      }
-                    </Text>
-                </View>
-            )}
-        />
+      <SimpleHeader />
+      <FlatList
+        data={logs.slice(0, 10)}
+        keyExtractor={i => i.id}
+        ListHeaderComponent={renderHeader}
+        contentContainerStyle={{ padding: 20 }}
+        renderItem={({ item }) => (
+          <Swipeable renderRightActions={() => renderRightActions(item.id)} friction={2}>
+            <View style={styles.logItem}>
+              <Text style={{ fontFamily: 'Poppins_700Bold', color: THEME.darkGray }}>{item.event}</Text>
+              <Text style={{ fontSize: 13, color: '#555', marginTop: 2, fontFamily: 'Poppins_400Regular' }}>
+                {item.details}
+              </Text>
+              <Text style={{ fontSize: 12, color: THEME.primaryRed, marginTop: 4 }}>
+                {new Date(item.timestamp).toLocaleString('en-US', { 
+                  month: 'long', 
+                  day: 'numeric', 
+                  year: 'numeric', 
+                  hour: 'numeric', 
+                  minute: '2-digit', 
+                  hour12: true 
+                })}
+              </Text>
+            </View>
+          </Swipeable>
+        )}
+      />
     </View>
   );
 }
@@ -587,12 +843,13 @@ function EmergencyScreen() {
   
     useEffect(() => {
       const membersRef = ref(rtdb, "Home_01/Household_Members");
-      onValue(membersRef, (snapshot) => {
+      const unsubscribe = onValue(membersRef, (snapshot) => {
         if (snapshot.exists()) {
           const data = snapshot.val();
           setHouseholdMembers(Object.keys(data).map(key => ({ id: key, ...data[key] })));
         } else { setHouseholdMembers([]); }
       });
+      return () => unsubscribe();
     }, []);
   
     const handleSaveMember = () => {
@@ -623,22 +880,27 @@ function EmergencyScreen() {
     const openEditModal = (member: any) => { setEditingMemberId(member.id); setNewName(member.name); setNewPhone(member.phone); setNewRole(member.role); setErrors({ name: false, phone: false, role: false }); setAddModalVisible(true); };
     const closeAndResetModal = () => { setAddModalVisible(false); setEditingMemberId(null); setNewName(''); setNewPhone(''); setNewRole(''); setErrors({ name: false, phone: false, role: false }); };
 
-    const renderRightActions = (id: string) => (
-        <TouchableOpacity onPress={() => handleDeleteMember(id)} style={styles.deleteAction}>
-            <Feather name="trash-2" size={24} color="white" />
-            <Text style={{color:'white', fontWeight:'bold', fontSize: 10}}>Delete</Text>
-        </TouchableOpacity>
+   const renderRightActions = (id: string) => (
+        // Added paddingBottom: 10
+        <View style={{ width: 85, paddingBottom: 10 }}> 
+            <TouchableOpacity onPress={() => handleDeleteMember(id)} style={styles.deleteAction}>
+                <Feather name="trash-2" size={24} color="white" />
+                <Text style={{color:'white', fontWeight:'bold', fontSize: 10, marginTop: 4}}>Delete</Text>
+            </TouchableOpacity>
+        </View>
     );
 
     const renderLeftActions = (member: any) => (
-        <TouchableOpacity onPress={() => openEditModal(member)} style={styles.editAction}>
-            <Feather name="edit" size={24} color="white" />
-            <Text style={{color:'white', fontWeight:'bold', fontSize: 10}}>Edit</Text>
-        </TouchableOpacity>
+        // Added paddingBottom: 10
+        <View style={{ width: 85, paddingBottom: 10 }}> 
+            <TouchableOpacity onPress={() => openEditModal(member)} style={styles.editAction}>
+                <Feather name="edit" size={24} color="white" />
+                <Text style={{color:'white', fontWeight:'bold', fontSize: 10, marginTop: 4}}>Edit</Text>
+            </TouchableOpacity>
+        </View>
     );
   
     return (
-        <GestureHandlerRootView style={{flex: 1}}>
             <View style={styles.screenContainer}>
                 <SimpleHeader />
                 <ScrollView contentContainerStyle={{ padding: 20, paddingBottom: 100 }}>
@@ -655,8 +917,15 @@ function EmergencyScreen() {
                     <Text style={{fontSize: 10, color: '#999', marginBottom: 10, textAlign:'center'}}>Slide Right to Edit  •  Slide Left to Delete</Text>
 
                     {householdMembers.map((member) => (
-                        <Swipeable key={member.id} renderRightActions={() => renderRightActions(member.id)} renderLeftActions={() => renderLeftActions(member)}>
-                            <View style={styles.contactRow}>
+                        <Swipeable 
+                            key={member.id} 
+                            renderRightActions={() => renderRightActions(member.id)} 
+                            renderLeftActions={() => renderLeftActions(member)}
+                            friction={2}
+                            overshootLeft={false}
+                            overshootRight={false}
+                        >
+                            <View style={[styles.contactRow, { marginHorizontal: 0 }]}>
                                 <View style={styles.avatarCircle}><Text style={{color:'white', fontWeight:'bold'}}>{member.name.charAt(0)}</Text></View>
                                 <View style={{flex: 1, marginLeft: 15}}>
                                     <Text style={styles.contactName}>{member.name}</Text>
@@ -707,7 +976,6 @@ function EmergencyScreen() {
                                 <Text style={{color:'white', fontFamily:'Poppins_700Bold'}}>SAVE</Text>
                             </TouchableOpacity>
 
-                            {/* Subtle Cancel Button */}
                             <TouchableOpacity 
                                 style={{
                                     backgroundColor: '#F5F5F5', 
@@ -727,19 +995,17 @@ function EmergencyScreen() {
                     </TouchableWithoutFeedback>
                 </Modal>
             </View>
-        </GestureHandlerRootView>
     );
 }
 
 function SettingsScreen() {
     const router = useRouter(); 
     
-    // State to hold the fetched name - defaults to "User" while loading
     const [userName, setUserName] = useState("User");
     const [isProfileModalVisible, setProfileModalVisible] = useState(false);
     const [isPasswordModalVisible, setPasswordModalVisible] = useState(false);
     const [isAboutModalVisible, setAboutModalVisible] = useState(false);
-    const [aboutTab, setAboutTab] = useState('about');
+    const [testMode, setTestMode] = useState(false);
     const [editName, setEditName] = useState('');
     const [editError, setEditError] = useState(false);
     const [currentPassword, setCurrentPassword] = useState('');
@@ -748,28 +1014,37 @@ function SettingsScreen() {
     const [passwordErrors, setPasswordErrors] = useState({ current: false, new: false, confirm: false });
     const currentUserEmail = auth.currentUser?.email || "user@gasolve.com";
 
-    // Fetch the user's name from Firestore
     useEffect(() => {
-        const fetchUserData = async () => {
-            if (auth.currentUser) {
-                try {
-                    const userDocRef = doc(db, "users", auth.currentUser.uid);
-                    const userDocSnap = await getDoc(userDocRef);
-                    
-                    if (userDocSnap.exists()) {
-                        setUserName(userDocSnap.data().fullName);
-                    } else {
-                        setUserName("Unknown User");
-                    }
-                } catch (error) {
-                    console.error("Error fetching user data:", error);
-                    setUserName("Error loading name");
-                }
-            }
-        };
+  const fetchUserData = async () => {
+    if (auth.currentUser) {
+      try {
+        const userDocRef = doc(db, "users", auth.currentUser.uid);
+        const userDocSnap = await getDoc(userDocRef);
         
-        fetchUserData();
-    }, []);
+        if (userDocSnap.exists()) {
+          setUserName(userDocSnap.data().fullName);
+        }
+      } catch (error: any) {
+        console.log("Firestore Fetch Error:", error.message);
+        // If Firestore fails, the app will just show "User" instead of crashing
+      }
+    }
+  };
+
+  fetchUserData();
+}, []);
+
+    const toggleTestMode = (val: boolean) => {
+        update(ref(rtdb, "Home_01/Live_Status/Settings"), { Test_Mode: val });
+        setTestMode(val);
+        
+        const historyRef = ref(rtdb, `Home_01/History`);
+        push(historyRef, {
+            event: val ? "🛡️ SIMULATION STARTED" : "🛡️ SIMULATION ENDED",
+            timestamp: Date.now(),
+            details: val ? "System entered demonstration mode." : "System returned to live monitoring."
+        });
+    };
 
     const openProfileModal = () => {
         setEditName(userName !== "User" ? userName : "");
@@ -850,19 +1125,22 @@ function SettingsScreen() {
                 { 
                     text: "Log Out", 
                     style: "destructive", 
-                    onPress: async () => {
-                        try {
-                            await signOut(auth);
-                            router.replace('/'); 
-                        } catch (error) {
-                            Alert.alert("Error", "Failed to log out. Please try again.");
-                        }
-                    } 
+                   onPress: async () => {
+                    try {
+                      // 1. Move the user first (optional but helps avoid white screen)
+                      router.replace('/'); 
+                      
+                      // 2. Then sign out
+                      await signOut(auth);
+                    } catch (error: any) {
+                      Alert.alert("Error", "Failed to log out.");
+                    }
+                  }
                 }
             ]
         );
     };
-
+      
     return (
         <View style={styles.screenContainer}>
             <SimpleHeader />
@@ -885,7 +1163,6 @@ function SettingsScreen() {
                     </View>   
                 </TouchableOpacity>
 
-                {/* Subtle Change Password Button */}
                 <TouchableOpacity 
                     style={{
                         backgroundColor: '#F5F5F5', 
@@ -901,30 +1178,39 @@ function SettingsScreen() {
                     <Text style={{fontSize: 15, color: THEME.darkGray, fontFamily: 'Poppins_700Bold'}}>Change Password</Text>
                 </TouchableOpacity>
 
-                {/* Subtle About GaSolve Button */}
                 <TouchableOpacity 
-                    style={{
-                        backgroundColor: '#F5F5F5', 
-                        padding: 15, 
-                        borderRadius: 10, 
-                        alignItems: 'center', 
-                        marginTop: 12, 
-                        marginBottom: 12,
-                        borderWidth: 1,
-                        borderColor: '#E0E0E0'
-                    }} 
-                    onPress={() => setAboutModalVisible(true)}
-                >
-                    <Text style={{fontSize: 15, color: THEME.darkGray, fontFamily: 'Poppins_700Bold'}}>About GaSolve</Text>
-                </TouchableOpacity>
+                style={{
+                    backgroundColor: '#F5F5F5', 
+                    padding: 15, 
+                    borderRadius: 10, 
+                    alignItems: 'center', 
+                    marginTop: 12, 
+                    marginBottom: 12,
+                    borderWidth: 1,
+                    borderColor: '#E0E0E0'
+                }} 
+                onPress={() => setAboutModalVisible(true)} 
+                onLongPress={() => {
+                    const nextState = !testMode;
+                    toggleTestMode(nextState);
+                    Vibration.vibrate(200); 
+                    Alert.alert(
+                        nextState ? "Test Mode Active" : "Test Mode Deactivated",
+                        nextState ? "The system is now simulating a DANGER state." : "Returning to live sensor data."
+                    );
+                }}
+                delayLongPress={2000} 
+            >
+                <Text style={{fontSize: 15, color: THEME.darkGray, fontFamily: 'Poppins_700Bold'}}>
+                    About GaSolve
+                </Text>
+            </TouchableOpacity>
 
-                {/* Primary Red Log Out Button */}
                 <TouchableOpacity style={styles.logoutBtnNew} onPress={handleLogout}>
                     <Text style={{fontSize: 15, color: 'white', fontFamily: 'Poppins_700Bold', fontWeight: 'bold'}}>Log Out</Text>
                 </TouchableOpacity>
             </ScrollView>
 
-            {/* Profile Modal */}
             <Modal visible={isProfileModalVisible} animationType="slide" transparent={true}>
                 <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
                 <View style={styles.modalOverlay}>
@@ -947,7 +1233,6 @@ function SettingsScreen() {
                             <Text style={{color:'white', fontFamily:'Poppins_700Bold'}}>SAVE</Text>
                         </TouchableOpacity>
 
-                        {/* Subtle Cancel Button */}
                         <TouchableOpacity 
                             style={{
                                 backgroundColor: '#F5F5F5', padding: 15, borderRadius: 10, alignItems: 'center', 
@@ -962,7 +1247,6 @@ function SettingsScreen() {
                 </TouchableWithoutFeedback>
             </Modal>
 
-            {/* Password Modal */}
             <Modal visible={isPasswordModalVisible} animationType="slide" transparent={true}>
                 <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
                 <View style={styles.modalOverlay}>
@@ -1006,7 +1290,6 @@ function SettingsScreen() {
                             <Text style={{color:'white', fontFamily:'Poppins_700Bold'}}>CHANGE PASSWORD</Text>
                         </TouchableOpacity>
 
-                        {/* Subtle Cancel Button */}
                         <TouchableOpacity 
                             style={{
                                 backgroundColor: '#F5F5F5', padding: 15, borderRadius: 10, alignItems: 'center', 
@@ -1021,12 +1304,9 @@ function SettingsScreen() {
                 </TouchableWithoutFeedback>
             </Modal>
 
-            {/* About Modal */}
-            {/* About Modal */}
             <Modal visible={isAboutModalVisible} animationType="fade" transparent={true}>
                 <View style={styles.modalOverlay}>
                     <View style={[styles.addMemberModalContent, {height: '88%', flexDirection: 'column'}]}>
-                        {/* Header */}
                         <View style={{flexDirection:'row', justifyContent:'space-between', alignItems:'center', marginBottom:20}}>
                             <Text style={styles.modalTitle}>About GaSolve</Text>
                             <TouchableOpacity onPress={() => setAboutModalVisible(false)}>
@@ -1036,7 +1316,6 @@ function SettingsScreen() {
 
                         <ScrollView showsVerticalScrollIndicator={false} style={{flex: 1}}>
                             
-                            {/* --- ABOUT SECTION --- */}
                             <View style={{alignItems: 'center', marginBottom: 20}}>
                                 <Image source={require('../assets/images/RED_LOGO.png')} style={{width: 70, height: 54, resizeMode:'contain'}} />
                                 <Text style={{fontSize: 22, fontFamily: 'Poppins_700Bold', color: THEME.primaryRed, marginTop: 5}}>GaSolve</Text>
@@ -1055,8 +1334,6 @@ function SettingsScreen() {
                                 <Text style={{fontSize: 12, color: THEME.darkGray, fontFamily: 'Poppins_600SemiBold'}}>Call 911 / BFP for emergencies</Text>
                             </View>
 
-
-                            {/* --- FEATURES SECTION --- */}
                             <Text style={{fontSize: 14, fontFamily: 'Poppins_700Bold', color: THEME.darkGray, marginBottom: 12}}>Key Features</Text>
                             
                             <View style={{backgroundColor: '#FFF0F0', borderRadius: 12, padding: 14, borderLeftWidth: 4, borderLeftColor: THEME.primaryRed, marginBottom: 15}}>
@@ -1084,8 +1361,6 @@ function SettingsScreen() {
                                 <Text style={{fontSize: 12, color: '#555', fontFamily: 'Poppins_400Regular'}}>1000+ PPM: Danger Zone ⚠️</Text>
                             </View>
 
-
-                            {/* --- TEAM SECTION --- */}
                             <Text style={{fontSize: 14, fontFamily: 'Poppins_700Bold', color: THEME.darkGray, marginBottom: 12}}>Development Team</Text>
 
                             <View style={{backgroundColor: '#f5f5f5', borderRadius: 12, padding: 14, marginBottom: 15}}>
@@ -1124,7 +1399,6 @@ function SettingsScreen() {
 
                         </ScrollView>
 
-                        {/* Subtle Close Button */}
                         <TouchableOpacity 
                             style={{
                                 backgroundColor: '#F5F5F5', padding: 15, borderRadius: 10, alignItems: 'center', 
@@ -1142,7 +1416,7 @@ function SettingsScreen() {
 }
 
 // ==========================================
-// 4. MAIN DASHBOARD (Exported Container)
+// 4. MAIN DASHBOARD 
 // ==========================================
 export default function DashboardScreen() {
   let [fontsLoaded] = useFonts({ Poppins_400Regular, Poppins_600SemiBold, Poppins_700Bold, Poppins_900Black });
@@ -1155,46 +1429,63 @@ export default function DashboardScreen() {
 
   if (!fontsLoaded) return null;
 
-  const renderScreen = () => {
-    switch (activeTab) {
-      case 'Home': return <HomeScreen />;
-      case 'History': return <HistoryScreen />;
-      case 'Contacts': return <EmergencyScreen />;
-      case 'Settings': return <SettingsScreen />;
-      default: return <HomeScreen />;
-    }
-  };
-
   return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: THEME.background }}>
-      <StatusBar barStyle="dark-content" />
-      
-      <View style={{ flex: 1 }}>
-        {renderScreen()}
-      </View>
+    <GestureHandlerRootView style={{ flex: 1 }}>
+        <SafeAreaView style={{ flex: 1, backgroundColor: THEME.background }}>
+            <StatusBar barStyle="dark-content" />
+            
+            {/* --- CRITICAL FIX: The Invisible Stack Method --- */}
+            <View style={{ flex: 1 }}>
+                <View 
+                  style={[StyleSheet.absoluteFill, { opacity: activeTab === 'Home' ? 1 : 0 }]} 
+                  pointerEvents={activeTab === 'Home' ? 'auto' : 'none'}
+                >
+                  <HomeScreen />
+                </View>
+                
+                <View 
+                  style={[StyleSheet.absoluteFill, { opacity: activeTab === 'History' ? 1 : 0 }]} 
+                  pointerEvents={activeTab === 'History' ? 'auto' : 'none'}
+                >
+                  <HistoryScreen />
+                </View>
+                
+                <View 
+                  style={[StyleSheet.absoluteFill, { opacity: activeTab === 'Contacts' ? 1 : 0 }]} 
+                  pointerEvents={activeTab === 'Contacts' ? 'auto' : 'none'}
+                >
+                  <EmergencyScreen />
+                </View>
+                
+                <View 
+                  style={[StyleSheet.absoluteFill, { opacity: activeTab === 'Settings' ? 1 : 0 }]} 
+                  pointerEvents={activeTab === 'Settings' ? 'auto' : 'none'}
+                >
+                  <SettingsScreen />
+                </View>
+            </View>
 
-      <View style={styles.customTabBar}>
-        <TouchableOpacity style={styles.tabItem} onPress={() => setActiveTab('Home')}>
-          <Feather name="home" size={24} color={activeTab === 'Home' ? THEME.primaryRed : '#999'} />
-          <Text style={[styles.tabLabelText, { color: activeTab === 'Home' ? THEME.primaryRed : '#999' }]}>Home</Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity style={styles.tabItem} onPress={() => setActiveTab('History')}>
-          <Feather name="calendar" size={24} color={activeTab === 'History' ? THEME.primaryRed : '#999'} />
-          <Text style={[styles.tabLabelText, { color: activeTab === 'History' ? THEME.primaryRed : '#999' }]}>History</Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity style={styles.tabItem} onPress={() => setActiveTab('Contacts')}>
-          <Feather name="phone" size={24} color={activeTab === 'Contacts' ? THEME.primaryRed : '#999'} />
-          <Text style={[styles.tabLabelText, { color: activeTab === 'Contacts' ? THEME.primaryRed : '#999' }]}>Contacts</Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity style={styles.tabItem} onPress={() => setActiveTab('Settings')}>
-          <Feather name="settings" size={24} color={activeTab === 'Settings' ? THEME.primaryRed : '#999'} />
-          <Text style={[styles.tabLabelText, { color: activeTab === 'Settings' ? THEME.primaryRed : '#999' }]}>Settings</Text>
-        </TouchableOpacity>
-      </View>
-    </SafeAreaView>
+            {/* TAB BAR */}
+            <View style={styles.customTabBar}>
+                <TouchableOpacity style={styles.tabItem} onPress={() => setActiveTab('Home')}>
+                    <Feather name="home" size={24} color={activeTab === 'Home' ? THEME.primaryRed : '#999'} />
+                    <Text style={[styles.tabLabelText, { color: activeTab === 'Home' ? THEME.primaryRed : '#999' }]}>Home</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={styles.tabItem} onPress={() => setActiveTab('History')}>
+                    <Feather name="calendar" size={24} color={activeTab === 'History' ? THEME.primaryRed : '#999'} />
+                    <Text style={[styles.tabLabelText, { color: activeTab === 'History' ? THEME.primaryRed : '#999' }]}>History</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={styles.tabItem} onPress={() => setActiveTab('Contacts')}>
+                    <Feather name="phone" size={24} color={activeTab === 'Contacts' ? THEME.primaryRed : '#999'} />
+                    <Text style={[styles.tabLabelText, { color: activeTab === 'Contacts' ? THEME.primaryRed : '#999' }]}>Contacts</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={styles.tabItem} onPress={() => setActiveTab('Settings')}>
+                    <Feather name="settings" size={24} color={activeTab === 'Settings' ? THEME.primaryRed : '#999'} />
+                    <Text style={[styles.tabLabelText, { color: activeTab === 'Settings' ? THEME.primaryRed : '#999' }]}>Settings</Text>
+                </TouchableOpacity>
+            </View>
+        </SafeAreaView>
+    </GestureHandlerRootView>
   );
 }
 
@@ -1202,8 +1493,13 @@ export default function DashboardScreen() {
 // STYLES
 // ==========================================
 const styles = StyleSheet.create({
+  // --- General Shared Styles ---
   screenContainer: { flex: 1, backgroundColor: THEME.background },
   headerContainer: { flexDirection: 'column', paddingHorizontal: 20, paddingTop: 10, paddingBottom: 10, borderBottomWidth: 1, borderBottomColor: '#F0E0E0' },
+  screenTitle: { fontSize: 28, fontFamily: 'Poppins_900Black', color: THEME.primaryRed, marginBottom: 20 },
+  sectionHeader: { fontSize: 14, fontFamily: 'Poppins_700Bold', color: THEME.primaryRed, marginTop: 20, marginBottom: 10 },
+  
+  // --- Status Banner & Cards ---
   statusBanner: { padding: 20, borderRadius: 16, alignItems: 'center', marginTop: -50, marginBottom: 10, shadowColor: "#000", shadowOffset: {width:0, height:4}, shadowOpacity: 0.2, shadowRadius: 5, elevation: 5 },
   statusBannerTitle: { fontSize: 24, fontFamily: 'Poppins_900Black', color: 'white', marginLeft: 10 },
   statusBannerDesc: { color: 'rgba(255,255,255,0.9)', fontSize: 12, marginTop: 5, textAlign:'center' },
@@ -1217,70 +1513,38 @@ const styles = StyleSheet.create({
   safetyItemDesc: { fontSize: 13, color: '#555', marginTop: 2 },
   emergencyBtnLarge: { backgroundColor: THEME.primaryRed, padding: 20, borderRadius: 16, alignItems: 'center', shadowColor: THEME.primaryRed, shadowOffset: {width:0, height:4}, shadowOpacity:0.3, shadowRadius:5, elevation:5 },
   emergencyBtnText: { color: 'white', fontFamily: 'Poppins_700Bold', fontSize: 18 },
-  controlCard: { backgroundColor: 'white', padding: 15, borderRadius: 16, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 15, elevation: 1, shadowColor: '#000', shadowOpacity: 0.05, shadowRadius: 5 },
+
+  // --- NEW Pop-Up Modal Styles (Minimalist Mute) ---
+  popupOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'center', alignItems: 'center' },
+  popupContainer: { width: '85%', backgroundColor: 'white', borderRadius: 24, overflow: 'hidden', elevation: 10, shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.3, shadowRadius: 5 },
+  popupHeader: { backgroundColor: '#F74A4A', flexDirection: 'row', paddingVertical: 18, justifyContent: 'center', alignItems: 'center' },
+  popupHeaderText: { color: 'white', fontFamily: 'Poppins_900Black', fontSize: 18, marginLeft: 8 },
+  popupBody: { paddingVertical: 30, paddingHorizontal: 24, alignItems: 'center' },
+  popupTitle: { fontFamily: 'Poppins_700Bold', fontSize: 16, color: THEME.darkGray, textAlign: 'center', marginBottom: 5 },
+  popupMuteBtn: { backgroundColor: '#37474F', paddingVertical: 16, borderRadius: 12, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', marginTop: 0, width: '100%' },
+  popupMuteBtnText: { color: 'white', fontFamily: 'Poppins_700Bold', fontSize: 16, marginLeft: 10 },
+
+  // --- Other Components ---
+  controlCard: { backgroundColor: 'white', padding: 15, borderRadius: 16, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 15, elevation: 1 },
   iconBox: { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center' },
   cardLabel: { fontSize: 16, fontFamily: 'Poppins_700Bold', color: THEME.darkGray },
-  progressBarBg: { height: 8, backgroundColor: '#EEE', borderRadius: 4, width: '100%', marginTop: 5 },
-  progressBarFill: { height: 8, backgroundColor: THEME.primaryRed, borderRadius: 4 },
-  valveButton: { padding: 18, borderRadius: 16, marginBottom: 15, shadowColor: "#000", shadowOffset: {width:0, height:4}, shadowOpacity: 0.06, shadowRadius: 6, elevation: 4, borderWidth: 2 },
-  valveButtonDesc: { fontSize: 12, color: THEME.darkGray, marginTop: 2 },
-  valvePill: { paddingHorizontal: 12, paddingVertical: 8, borderRadius: 20, alignItems: 'center', justifyContent: 'center' },
-  valvePillText: { color: 'white', fontWeight: '700', fontSize: 14 },
-  largeValveButton: {
-    width: '100%',
-    paddingVertical: 18,
-    paddingHorizontal: 20,
-    borderRadius: 15,
-    marginVertical: 10,
-    elevation: 4,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.15,
-    shadowRadius: 4,
-  },
-  buttonContentRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  buttonTextColumn: {
-    flexDirection: 'column',
-    alignItems: 'flex-start',
-  },
-  largeValveTitle: {
-    color: 'white',
-    fontSize: 20,
-    fontWeight: '900',
-    letterSpacing: 0.5,
-  },
-  largeValveSubtitle: {
-    color: 'rgba(255, 255, 255, 0.9)',
-    fontSize: 13,
-    marginTop: 2,
-    fontWeight: '500',
-  },
-  screenTitle: { fontSize: 28, fontFamily: 'Poppins_900Black', color: THEME.primaryRed, marginBottom: 20 },
-  sectionHeader: { fontSize: 14, fontFamily: 'Poppins_700Bold', color: THEME.primaryRed, marginTop: 40, marginBottom: 10 },
-  logItem: { backgroundColor: 'white', padding: 15, borderRadius: 10, marginBottom: 10, borderLeftWidth: 5, borderLeftColor: THEME.primaryRed },
-  emergencyCardRed: { backgroundColor: THEME.primaryRed, padding: 20, borderRadius: 15, flexDirection: 'row', alignItems: 'center', justifyContent: 'center' },
-  contactRow: { flexDirection: 'row', alignItems: 'center', backgroundColor: 'white', padding: 15, borderRadius: 12, marginBottom: 10, borderWidth: 1, borderColor: '#eee' },
-  avatarCircle: { width: 40, height: 40, borderRadius: 20, backgroundColor: THEME.primaryRed, alignItems: 'center', justifyContent: 'center' },
-  contactName: { fontFamily: 'Poppins_700Bold', color: THEME.darkGray, fontSize: 16 },
-  contactRole: { fontSize: 12, color: '#666' },
-  callIconBtn: { padding: 10, backgroundColor: '#FFF0E0', borderRadius: 10 },
-  addMemberBtn: { backgroundColor: THEME.primaryRed, padding: 15, borderRadius: 12, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', marginTop: 10 },
-  deleteAction: { backgroundColor: THEME.primaryRed, justifyContent: 'center', alignItems: 'center', width: 70, marginBottom: 10, borderRadius: 12, marginRight: 10 },
-  editAction: { backgroundColor: THEME.editBlue, justifyContent: 'center', alignItems: 'center', width: 70, marginBottom: 10, borderRadius: 12, marginLeft: 10 },
+  valveToggleContainer: { flexDirection: 'row', alignItems: 'center', backgroundColor: 'white', borderRadius: 30, paddingVertical: 15, paddingHorizontal: 20, marginVertical: 10, marginBottom: 20, elevation: 5 },
+  valveToggleTitle: { fontSize: 18, fontFamily: 'Poppins_700Bold', color: THEME.darkGray },
+  valveToggleSubtitle: { fontSize: 13, fontFamily: 'Poppins_600SemiBold', color: '#757575', marginTop: 2, textTransform: 'uppercase' },
+  
+  // --- Modals, Forms & Tabs ---
   addMemberModalContent: { backgroundColor: 'white', borderRadius: 24, padding: 24, width: '90%' },
   modalTitle: { fontSize: 20, fontFamily: 'Poppins_700Bold', color: THEME.primaryRed },
+  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', alignItems: 'center' },
   textInput: { backgroundColor: '#F9F9F9', borderWidth: 1, borderColor: '#DDD', borderRadius: 10, padding: 12, color: THEME.darkGray },
   dropdown: { height: 50, borderColor: '#DDD', borderWidth: 1, borderRadius: 10, paddingHorizontal: 10, backgroundColor: '#F9F9F9' },
   continueBtn: { backgroundColor: THEME.primaryRed, padding: 15, borderRadius: 12, alignItems: 'center', marginTop: 20 },
   logoutBtnNew: { backgroundColor: THEME.primaryRed, padding: 15, borderRadius: 10, alignItems: 'center', marginTop: 20 },
-  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', alignItems: 'center' },
   label: { fontSize: 12, fontFamily: 'Poppins_600SemiBold', color: THEME.darkGray, marginBottom: 4, marginLeft: 4 },
   errorBorder: { borderColor: THEME.primaryRed, borderWidth: 1.5, backgroundColor: '#FFF0F0' },
   errorText: { color: THEME.primaryRed, fontSize: 10, marginLeft: 5, marginTop: 2, fontFamily: 'Poppins_400Regular' },
+  
+  // --- Lists & History ---
   tabContainer: { flexDirection: 'row', backgroundColor: '#ffffff', borderRadius: 15, padding: 5, elevation: 4, marginBottom: 15 },
   tab: { flex: 1, paddingVertical: 10, alignItems: 'center', borderRadius: 10 },
   tabActive: { backgroundColor: THEME.primaryRed },
@@ -1290,31 +1554,23 @@ const styles = StyleSheet.create({
   legendItem: { flexDirection: 'row', alignItems: 'center' },
   legendDot: { width: 8, height: 8, borderRadius: 4, marginRight: 6 },
   legendText: { fontSize: 10, fontFamily: 'Poppins_600SemiBold', color: '#666' },
- customTabBar: { 
-    flexDirection: 'row', 
-    backgroundColor: THEME.surface, // Back to your clean cream/surface color
-    height: Platform.OS === 'ios' ? 85 : 70, 
-    paddingTop: 10, 
-    paddingBottom: Platform.OS === 'ios' ? 25 : 10,
-    borderTopLeftRadius: 24, 
-    borderTopRightRadius: 24,
-    shadowColor: '#000', // Standard subtle shadow
-    shadowOffset: { width: 0, height: -4 },
-    shadowOpacity: 0.05,
-    shadowRadius: 10,
-    elevation: 10,
-  },
-  tabItem: { 
-    flex: 1, 
-    alignItems: 'center', 
-    justifyContent: 'center' 
-  },
-  tabLabelText: {
-    fontSize: 10, 
-    fontFamily: 'Poppins_600SemiBold', 
-    marginTop: 4
-  },
-  tabLabel: { fontSize: 10, fontFamily: 'Poppins_600SemiBold', marginTop: 4 },
-  tabButtonAbout: { flex: 1, paddingVertical: 10, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
-  tabButtonAboutActive: { backgroundColor: THEME.primaryRed },
+  logItem: { backgroundColor: 'white', padding: 15, borderRadius: 10, marginBottom: 10, borderLeftWidth: 5, borderLeftColor: THEME.primaryRed },
+  
+  // --- Contacts ---
+  emergencyCardRed: { backgroundColor: THEME.primaryRed, padding: 20, borderRadius: 15, flexDirection: 'row', alignItems: 'center', justifyContent: 'center' },
+  contactRow: { flexDirection: 'row', alignItems: 'center', backgroundColor: 'white', padding: 15, borderRadius: 12, marginBottom: 10, borderWidth: 1, borderColor: '#eee' },
+  avatarCircle: { width: 40, height: 40, borderRadius: 20, backgroundColor: THEME.primaryRed, alignItems: 'center', justifyContent: 'center' },
+  contactName: { fontFamily: 'Poppins_700Bold', color: THEME.darkGray, fontSize: 16 },
+  contactRole: { fontSize: 12, color: '#666' },
+  callIconBtn: { padding: 10, backgroundColor: '#FFF0E0', borderRadius: 10 },
+  addMemberBtn: { backgroundColor: THEME.primaryRed, padding: 15, borderRadius: 12, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', marginTop: 10 },
+  
+  // --- Swipe Actions ---
+  deleteAction: { backgroundColor: THEME.primaryRed, justifyContent: 'center', alignItems: 'center', flex: 1, borderRadius: 12, marginLeft: 10 },
+  editAction: { backgroundColor: THEME.edit, justifyContent: 'center', alignItems: 'center', flex: 1, borderRadius: 12, marginRight: 10 },
+  
+  // --- Bottom Navigation ---
+  customTabBar: { flexDirection: 'row', backgroundColor: THEME.surface, height: Platform.OS === 'ios' ? 85 : 70, paddingTop: 10, paddingBottom: Platform.OS === 'ios' ? 25 : 10, borderTopLeftRadius: 24, borderTopRightRadius: 24, shadowColor: '#000', shadowOffset: { width: 0, height: -4 }, shadowOpacity: 0.05, shadowRadius: 10, elevation: 10 },
+  tabItem: { flex: 1, alignItems: 'center', justifyContent: 'center' },
+  tabLabelText: { fontSize: 10, fontFamily: 'Poppins_600SemiBold', marginTop: 4 }
 });

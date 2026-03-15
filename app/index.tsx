@@ -14,7 +14,7 @@ import {
   Image,
   Keyboard,
   KeyboardAvoidingView,
-  LogBox, // Added LogBox import
+  LogBox,
   Modal,
   Platform,
   ScrollView,
@@ -26,7 +26,6 @@ import {
   View
 } from 'react-native';
 
-// You can keep these if you plan to fetch user data upon login, otherwise they aren't strictly needed for Auth
 import { auth } from '../firebaseConfig';
 
 LogBox.ignoreLogs(['Virtual Log', 'Text string must be rendered']);
@@ -55,11 +54,17 @@ export default function LoginScreen() {
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
+  
+  // Inline Error States
+  const [emailError, setEmailError] = useState('');
+  const [passwordError, setPasswordError] = useState('');
+
+  // Forgot Password States
   const [isForgotPasswordModalVisible, setForgotPasswordModalVisible] = useState(false);
   const [resetEmail, setResetEmail] = useState('');
   const [resetLoading, setResetLoading] = useState(false);
 
-  // Prevent rendering until fonts are loaded to avoid flickering or crashes
+  // Prevent rendering until fonts are loaded to avoid flickering
   if (!fontsLoaded) {
     return null;
   }
@@ -70,10 +75,24 @@ export default function LoginScreen() {
 
     const trimmedEmail = email.trim();
 
-    if (trimmedEmail === '' || password === '') {
-      Alert.alert("Missing Info", "Please enter both email and password.");
-      return;
+    // Reset previous inline errors
+    setEmailError('');
+    setPasswordError('');
+
+    let isValid = true;
+
+    if (trimmedEmail === '') {
+      setEmailError('Please enter your email address.');
+      isValid = false;
     }
+    
+    if (password === '') {
+      setPasswordError('Please enter your password.');
+      isValid = false;
+    }
+
+    // Stop execution if any local checks failed
+    if (!isValid) return;
 
     setLoading(true);
     try {
@@ -82,29 +101,45 @@ export default function LoginScreen() {
       router.replace('/dashboard'); 
     } catch (error: any) {
       console.error(error.code);
-      let errorMessage = 'Login failed. Please try again.';
       
       switch (error.code) {
         case 'auth/invalid-credential':
         case 'auth/user-not-found':
         case 'auth/wrong-password':
-          errorMessage = 'Invalid email or password.';
+          setPasswordError('Invalid email or password.');
+          break;
+        case 'auth/invalid-email':
+          setEmailError('Please enter a valid email address.');
           break;
         case 'auth/too-many-requests':
-          errorMessage = 'Too many failed attempts. Try again later.';
+          setPasswordError('Too many failed attempts. Try again later.');
           break;
         case 'auth/network-request-failed':
-          errorMessage = 'Check your internet connection and try again.';
+          setPasswordError('Check your internet connection and try again.');
+          break;
+        default:
+          setPasswordError('Login failed. Please try again.');
           break;
       }
-      
-      setPassword(''); 
-      Alert.alert('Login Failed', errorMessage);
+      setPassword(''); // Clear the password field so they can try again
     } finally {
       setLoading(false);
     }
-  };
-
+    
+    /*const user = auth.currentUser;
+    if (user) {
+      const userDoc = await getDoc(doc(db, 'users', user.uid));
+      
+      if (userDoc.exists() && userDoc.data().hasDevice) {
+        // They already have a device! Go to Dashboard
+        router.replace('/dashboard');
+      } else {
+        // No device linked yet! Send them to Setup first
+        router.replace('/add_device'); 
+      }
+    }
+  */
+    };
   // Handle Forgot Password
   const handleForgotPassword = async () => {
     Keyboard.dismiss();
@@ -169,30 +204,41 @@ export default function LoginScreen() {
           <Text style={styles.instructionText}>Login to monitor your safety</Text>
 
           {/* Email Input */}
-          <View style={styles.inputContainer}>
+          <View style={[styles.inputContainer, emailError !== '' && styles.inputError]}>
             <Mail color={THEME.primaryRed} size={20} style={styles.icon} />
             <TextInput
               placeholder="Email Address"
               placeholderTextColor="#888"
               style={styles.input}
               value={email}
-              onChangeText={setEmail}
+              onChangeText={(text) => {
+                setEmail(text);
+                setEmailError(''); // Clears error when typing
+              }}
               autoCapitalize="none"
               keyboardType="email-address"
               autoComplete="email"
               textContentType="emailAddress"
             />
           </View>
+          {/* Email Helper Text */}
+          {emailError !== '' && (
+            <Text style={styles.helperText}>{emailError}</Text>
+          )}
 
           {/* Password Input */}
-          <View style={styles.inputContainer}>
+          <View style={[styles.inputContainer, passwordError !== '' && styles.inputError]}>
             <Lock color={THEME.primaryRed} size={20} style={styles.icon} />
             <TextInput
               placeholder="Password"
               placeholderTextColor="#888"
               style={styles.input}
               value={password}
-              onChangeText={setPassword}
+              onChangeText={(text) => {
+                setPassword(text);
+                setPasswordError(''); // Clears error when typing
+                setEmailError(''); // Clears email error too in case of "Invalid Credentials"
+              }}
               secureTextEntry={!showPassword}
               textContentType="password"
             />
@@ -203,6 +249,10 @@ export default function LoginScreen() {
               }
             </TouchableOpacity>
           </View>
+          {/* Password Helper Text */}
+          {passwordError !== '' && (
+            <Text style={styles.helperText}>{passwordError}</Text>
+          )}
 
           {/* Forgot Password */}
           <TouchableOpacity 
@@ -320,13 +370,13 @@ const styles = StyleSheet.create({
   },
   brandTitle: {
     fontSize: 28,
-    fontFamily: 'Poppins_700Bold', // Updated
+    fontFamily: 'Poppins_700Bold', 
     color: THEME.primaryRed, 
   },
   brandSubtitle: {
     fontSize: 14,
     color: THEME.primaryRed,
-    fontFamily: 'Poppins_600SemiBold', // Updated
+    fontFamily: 'Poppins_600SemiBold', 
     marginTop: 5,
   },
   bottomCard: {
@@ -336,23 +386,23 @@ const styles = StyleSheet.create({
     borderTopRightRadius: 30,
     padding: 30,
     paddingTop: 40,
-    paddingBottom: 50, 
+    paddingBottom: 20, 
     elevation: 15, 
-    shadowColor: '#000', 
+    shadowColor: '#ce7373', 
     shadowOffset: { width: 0, height: -5 },
     shadowOpacity: 0.25,
     shadowRadius: 15,
   },
   welcomeText: {
     fontSize: 24,
-    fontFamily: 'Poppins_700Bold', // Updated
+    fontFamily: 'Poppins_700Bold', 
     color: '#fff',
     marginBottom: 5,
   },
   instructionText: {
     fontSize: 14,
     color: '#ffcccc', 
-    fontFamily: 'Poppins_400Regular', // Updated
+    fontFamily: 'Poppins_400Regular', 
     marginBottom: 30,
   },
   inputContainer: {
@@ -364,6 +414,18 @@ const styles = StyleSheet.create({
     height: 55,
     marginBottom: 15,
   },
+  inputError: {
+    borderWidth: 2,
+    borderColor: '#ff4444', 
+  },
+  helperText: {
+    color: '#ffcccc',
+    fontSize: 12,
+    fontFamily: 'Poppins_400Regular',
+    marginTop: -10, 
+    marginBottom: 15, 
+    marginLeft: 5,
+  },
   icon: {
     marginRight: 10,
   },
@@ -371,7 +433,7 @@ const styles = StyleSheet.create({
     flex: 1,
     fontSize: 16,
     color: THEME.darkGray,
-    fontFamily: 'Poppins_400Regular', // Updated
+    fontFamily: 'Poppins_400Regular', 
   },
   forgotContainer: {
     alignItems: 'flex-end',
@@ -380,7 +442,7 @@ const styles = StyleSheet.create({
   forgotText: {
     color: '#fff',
     textDecorationLine: 'underline',
-    fontFamily: 'Poppins_400Regular', // Updated
+    fontFamily: 'Poppins_400Regular', 
   },
   loginButton: {
     backgroundColor: THEME.background, 
@@ -394,7 +456,7 @@ const styles = StyleSheet.create({
   loginButtonText: {
     color: THEME.primaryRed,
     fontSize: 18,
-    fontFamily: 'Poppins_700Bold', // Updated
+    fontFamily: 'Poppins_700Bold', 
   },
   signupContainer: {
     flexDirection: 'row',
@@ -403,12 +465,12 @@ const styles = StyleSheet.create({
   },
   signupText: {
     color: '#ffcccc',
-    fontFamily: 'Poppins_400Regular', // Updated
+    fontFamily: 'Poppins_400Regular', 
   },
   signupLink: {
     color: '#fff',
     textDecorationLine: 'underline',
-    fontFamily: 'Poppins_700Bold', // Updated
+    fontFamily: 'Poppins_700Bold', 
   },
   modalOverlay: {
     flex: 1,
@@ -437,19 +499,19 @@ const styles = StyleSheet.create({
   modalTitle: {
     fontSize: 22,
     color: THEME.primaryRed,
-    fontFamily: 'Poppins_700Bold', // Updated
+    fontFamily: 'Poppins_700Bold', 
   },
   modalCloseBtn: {
     fontSize: 24,
     color: '#888',
-    fontFamily: 'Poppins_700Bold', // Updated
+    fontFamily: 'Poppins_700Bold', 
   },
   modalSubtitle: {
     fontSize: 14,
     color: '#555',
     marginBottom: 20,
     lineHeight: 20,
-    fontFamily: 'Poppins_400Regular', // Updated
+    fontFamily: 'Poppins_400Regular', 
   },
   modalInputContainer: {
     flexDirection: 'row',
@@ -467,7 +529,7 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: THEME.darkGray,
     marginLeft: 10,
-    fontFamily: 'Poppins_400Regular', // Updated
+    fontFamily: 'Poppins_400Regular', 
   },
   modalButton: {
     backgroundColor: THEME.primaryRed,
@@ -480,12 +542,12 @@ const styles = StyleSheet.create({
   modalButtonText: {
     color: '#fff',
     fontSize: 16,
-    fontFamily: 'Poppins_700Bold', // Updated
+    fontFamily: 'Poppins_700Bold', 
   },
   modalCancelText: {
     textAlign: 'center',
     color: THEME.primaryRed,
     fontSize: 16,
-    fontFamily: 'Poppins_600SemiBold', // Updated
+    fontFamily: 'Poppins_600SemiBold', 
   },
 });

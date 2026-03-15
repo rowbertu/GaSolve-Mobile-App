@@ -22,7 +22,7 @@ import {
   TouchableOpacity,
   View
 } from 'react-native';
-import { auth, db } from '../firebaseConfig'; // Make sure this path is correct!
+import { auth, db } from '../firebaseConfig';
 
 export default function SignUpScreen() {
   const router = useRouter();
@@ -41,33 +41,52 @@ export default function SignUpScreen() {
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
 
+  // Inline Error States
+  const [emailError, setEmailError] = useState('');
+  const [passwordError, setPasswordError] = useState('');
+  const [confirmPasswordError, setConfirmPasswordError] = useState('');
+
   // Prevent rendering until fonts are loaded to avoid flickering
   if (!fontsLoaded) {
     return null;
   }
 
   const handleSignUp = async () => {
-    Keyboard.dismiss(); // Clean UX: Hide keyboard immediately
+    Keyboard.dismiss(); 
 
     const trimmedEmail = email.trim();
     const trimmedName = name.trim();
+
+    // Reset previous inline errors
+    setEmailError('');
+    setPasswordError('');
+    setConfirmPasswordError('');
+
+    let isValid = true;
 
     if (trimmedEmail === '' || password === '' || trimmedName === '') {
       Alert.alert('Error', 'Please fill in all fields.');
       return;
     }
-    if (password !== confirmPassword) {
-      Alert.alert('Error', 'Passwords do not match.');
-      return;
-    }
+
+    // Check 1: Password length
     if (password.length < 6) {
-      Alert.alert('Error', 'Password should be at least 6 characters.');
-      return;
+      setPasswordError('Password should be at least 6 characters.');
+      isValid = false;
     }
+
+    // Check 2: Passwords match
+    if (password !== confirmPassword) {
+      setConfirmPasswordError('Passwords do not match.');
+      isValid = false;
+    }
+
+    // Stop execution if any local checks failed
+    if (!isValid) return;
 
     setLoading(true);
     try {
-      // 1. Create the account
+      // 1. Create the account (Firebase auto-logs them in)
       const userCredential = await createUserWithEmailAndPassword(auth, trimmedEmail, password);
       const user = userCredential.user;
 
@@ -75,18 +94,21 @@ export default function SignUpScreen() {
       await setDoc(doc(db, 'users', user.uid), {
         fullName: trimmedName,
         email: trimmedEmail.toLowerCase(),
-        role: 'Homeowner', // Good to have for your GaSolve system
+        role: 'Homeowner', 
         createdAt: serverTimestamp(),
       });
 
       console.log('User saved to Firestore!');
       Alert.alert('Success', 'Account created! Please log in with your new credentials.');
       
-      // 3. Force Sign Out so they can test the login screen
+      // 3. Force Sign Out
       await signOut(auth);
 
-      // 4. Send them back to the Login screen
-      router.replace('/');
+      // 4. 🛡️ THE FIX: Wait 100 milliseconds for Firebase to clear the token 
+      // BEFORE moving back to the Login page. No more dashboard glimpses!
+      setTimeout(() => {
+        router.replace('/');
+      }, 100);
 
     } catch (error: any) {
       console.error(error);
@@ -94,14 +116,17 @@ export default function SignUpScreen() {
       
       switch (error.code) {
         case 'auth/email-already-in-use':
-          errorMessage = 'That email is already in use.';
-          break;
+          setEmailError('That email is already registered.');
+          setLoading(false);
+          return; 
         case 'auth/invalid-email':
-          errorMessage = 'Please enter a valid email address.';
-          break;
+          setEmailError('Please enter a valid email address.');
+          setLoading(false);
+          return;
         case 'auth/weak-password':
-          errorMessage = 'The password is too weak.';
-          break;
+          setPasswordError('The password is too weak.');
+          setLoading(false);
+          return;
         case 'auth/network-request-failed':
           errorMessage = 'Check your internet connection and try again.';
           break;
@@ -120,7 +145,7 @@ export default function SignUpScreen() {
     >
       <ScrollView 
         contentContainerStyle={styles.scrollContent}
-        keyboardShouldPersistTaps="handled" // Allows user to tap buttons while keyboard is open
+        keyboardShouldPersistTaps="handled" 
       >
         {/* --- TOP SECTION --- */}
         <View style={styles.topSection}>
@@ -153,30 +178,40 @@ export default function SignUpScreen() {
           </View>
 
           {/* Email Input */}
-          <View style={styles.inputContainer}>
+          <View style={[styles.inputContainer, emailError !== '' && styles.inputError]}>
             <Mail color="#b91c1c" size={20} style={styles.icon} />
             <TextInput
               placeholder="Email Address"
               placeholderTextColor="#888"
               style={styles.input}
               value={email}
-              onChangeText={setEmail}
+              onChangeText={(text) => {
+                setEmail(text);
+                setEmailError(''); // Clears error when typing
+              }}
               autoCapitalize="none"
               keyboardType="email-address"
               autoComplete="email"
               textContentType="emailAddress"
             />
           </View>
+          {/* Email Helper Text */}
+          {emailError !== '' && (
+            <Text style={styles.helperText}>{emailError}</Text>
+          )}
 
           {/* Password Input */}
-          <View style={styles.inputContainer}>
+          <View style={[styles.inputContainer, passwordError !== '' && styles.inputError]}>
             <Lock color="#b91c1c" size={20} style={styles.icon} />
             <TextInput
               placeholder="Password"
               placeholderTextColor="#888"
               style={styles.input}
               value={password}
-              onChangeText={setPassword}
+              onChangeText={(text) => {
+                setPassword(text);
+                setPasswordError(''); // Clears error when typing
+              }}
               secureTextEntry={!showPassword}
               textContentType="newPassword"
             />
@@ -184,20 +219,31 @@ export default function SignUpScreen() {
               {showPassword ? <EyeOff color="#888" size={20} /> : <Eye color="#888" size={20} />}
             </TouchableOpacity>
           </View>
+          {/* Password Helper Text */}
+          {passwordError !== '' && (
+            <Text style={styles.helperText}>{passwordError}</Text>
+          )}
 
           {/* Confirm Password Input */}
-          <View style={styles.inputContainer}>
+          <View style={[styles.inputContainer, confirmPasswordError !== '' && styles.inputError]}>
             <Lock color="#b91c1c" size={20} style={styles.icon} />
             <TextInput
               placeholder="Confirm Password"
               placeholderTextColor="#888"
               style={styles.input}
               value={confirmPassword}
-              onChangeText={setConfirmPassword}
+              onChangeText={(text) => {
+                setConfirmPassword(text);
+                setConfirmPasswordError(''); // Clears error when typing
+              }}
               secureTextEntry={!showPassword}
               textContentType="newPassword"
             />
           </View>
+          {/* Confirm Password Helper Text */}
+          {confirmPasswordError !== '' && (
+            <Text style={styles.helperText}>{confirmPasswordError}</Text>
+          )}
 
           {/* Sign Up Button */}
           <TouchableOpacity 
@@ -244,13 +290,13 @@ const styles = StyleSheet.create({
   },
   brandTitle: { 
     fontSize: 24, 
-    fontFamily: 'Poppins_700Bold', // Replaced fontWeight
+    fontFamily: 'Poppins_700Bold', 
     color: '#b91c1c'
   },
   brandSubtitle: { 
     fontSize: 14, 
     color: '#b91c1c', 
-    fontFamily: 'Poppins_600SemiBold', // Added font family
+    fontFamily: 'Poppins_600SemiBold', 
     marginTop: 5 
   },   
   bottomCard: {
@@ -269,14 +315,14 @@ const styles = StyleSheet.create({
   },
   headerText: { 
     fontSize: 24, 
-    fontFamily: 'Poppins_700Bold', // Replaced fontWeight
+    fontFamily: 'Poppins_700Bold', 
     color: '#fff', 
     marginBottom: 5 
   },
   subText: { 
     fontSize: 14, 
     color: '#ffcccc', 
-    fontFamily: 'Poppins_400Regular', // Added font family
+    fontFamily: 'Poppins_400Regular', 
     marginBottom: 25 
   },
   inputContainer: {
@@ -288,6 +334,18 @@ const styles = StyleSheet.create({
     height: 50,
     marginBottom: 15,
   },
+  inputError: {
+    borderWidth: 2,
+    borderColor: '#ff4444', 
+  },
+  helperText: {
+    color: '#ffcccc',
+    fontSize: 12,
+    fontFamily: 'Poppins_400Regular',
+    marginTop: -10, 
+    marginBottom: 15, 
+    marginLeft: 5,
+  },
   icon: { 
     marginRight: 10 
   },
@@ -295,7 +353,7 @@ const styles = StyleSheet.create({
     flex: 1, 
     fontSize: 16, 
     color: '#333',
-    fontFamily: 'Poppins_400Regular', // Added font family
+    fontFamily: 'Poppins_400Regular', 
   },
   button: {
     backgroundColor: '#FDFBF7',
@@ -310,7 +368,7 @@ const styles = StyleSheet.create({
   buttonText: { 
     color: '#b91c1c', 
     fontSize: 18, 
-    fontFamily: 'Poppins_700Bold', // Replaced fontWeight
+    fontFamily: 'Poppins_700Bold', 
   },
   loginContainer: { 
     flexDirection: 'row', 
@@ -318,11 +376,11 @@ const styles = StyleSheet.create({
   },
   loginText: { 
     color: '#ffcccc',
-    fontFamily: 'Poppins_400Regular', // Added font family
+    fontFamily: 'Poppins_400Regular', 
   },
   loginLink: { 
     color: '#fff', 
-    fontFamily: 'Poppins_700Bold', // Replaced fontWeight
+    fontFamily: 'Poppins_700Bold', 
     textDecorationLine: 'underline' 
   },
 });
