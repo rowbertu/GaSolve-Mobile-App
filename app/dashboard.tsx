@@ -96,7 +96,7 @@ const CenteredGauge = ({ value, max = 1000, colorMode }: any) => {
   const explainPPM = () => {
     Alert.alert(
         "What is PPM?",
-        "PPM stands for 'Parts Per Million'. It measures how much gas is in the air.\n\n• 0-200: Clean Air (Safe)\n• 200-1000: Minor Gas (Cooking)\n• 1000+: Leak Warning",
+        "PPM stands for 'Parts Per Million'. It measures how much gas is in the air.\n\n• 0-250: Clean Air (Safe)\n• 250-1000: Minor Gas (Cooking)\n• 1000+: Leak Warning",
         [{ text: "Got it" }]
     );
   };
@@ -663,22 +663,39 @@ function HistoryScreen() {
 
  useEffect(() => {
     const historyRef = ref(rtdb, `Home_01/History`);
-    
-    // INCREASED TO 100 so it grabs enough data to see the cooking events!
     const q = query(historyRef, orderByChild('timestamp'), limitToLast(100));
 
     const unsubscribe = onValue(q, (snapshot) => {
       if (snapshot.exists()) {
         const data = snapshot.val();
         
-        // 1. Fetch all logs
         const fetchedLogs = Object.keys(data)
           .map(k => ({ id: k, ...data[k] }))
           .sort((a, b) => b.timestamp - a.timestamp);
 
         setLogs(fetchedLogs);
 
-        // 2. Map the PPM numbers to the chart slots
+        // --- NEW: Helper functions for real-time filtering ---
+        const isToday = (date: Date) => {
+          const today = new Date();
+          return date.getDate() === today.getDate() &&
+                 date.getMonth() === today.getMonth() &&
+                 date.getFullYear() === today.getFullYear();
+        };
+
+        const isThisWeek = (date: Date) => {
+          const today = new Date();
+          // Get Monday of the current week
+          const firstDay = new Date(today.setDate(today.getDate() - today.getDay() + (today.getDay() === 0 ? -6 : 1))); 
+          firstDay.setHours(0, 0, 0, 0);
+          
+          const lastDay = new Date(firstDay);
+          lastDay.setDate(lastDay.getDate() + 6);
+          lastDay.setHours(23, 59, 59, 999);
+          
+          return date >= firstDay && date <= lastDay;
+        };
+
         const newData = new Array(currentLabels.length).fill(0);
 
         fetchedLogs.forEach(log => {
@@ -686,15 +703,20 @@ function HistoryScreen() {
           let index = -1;
 
           if (timeframe === 'daily') {
+            // ONLY plot if the log happened today
+            if (!isToday(date)) return; 
+            
             const hour = date.getHours();
-            index = Math.floor(hour / 4); // Maps to 12AM, 4AM, 8AM, etc.
+            index = Math.floor(hour / 4); 
           } else {
+            // ONLY plot if the log happened this week
+            if (!isThisWeek(date)) return; 
+            
             const day = date.getDay(); 
-            index = day === 0 ? 6 : day - 1; // Maps to Mon, Tue, Wed, etc.
+            index = day === 0 ? 6 : day - 1; 
           }
 
           if (index >= 0 && index < newData.length) {
-            // This plots the dot! If log.ppm is 400 (cooking), it puts it on the graph.
             newData[index] = Math.max(newData[index], log.ppm || 0);
           }
         });
@@ -726,10 +748,42 @@ function HistoryScreen() {
   );
 
   const renderHeader = () => {
+    const injectDummyData = () => {
+    const historyRef = ref(rtdb, `Home_01/History`);
+    const today = new Date();
+
+    // 9:00 AM Today (Should plot in the '8 AM' slot)
+    const morning = new Date(today);
+    morning.setHours(9, 0, 0, 0);
+
+    // 1:00 PM Today (Should plot in the '12 PM' slot)
+    const afternoon = new Date(today);
+    afternoon.setHours(13, 0, 0, 0);
+
+    const evening = new Date(today);
+    evening.setHours(19, 0, 0, 0);
+    
+    // 2 Days Ago (Should only appear on the 'Weekly' tab)
+    const twoDaysAgo = new Date(today);
+    twoDaysAgo.setDate(today.getDate() - 2);
+
+    const dummyLogs = [
+      { event: "🔥 COOKING ACTIVITY", timestamp: morning.getTime(), ppm: 350, details: "Morning cooking simulation." },
+      { event: "⚠️ SIMULATED LEAK", timestamp: afternoon.getTime(), ppm: 1050, details: "Test leak detection." },
+      { event: "🔥 COOKING ACTIVITY", timestamp: twoDaysAgo.getTime(), ppm: 500, details: "Previous day cooking." },
+      { event: "🔥 COOKING ACTIVITY", timestamp: evening.getTime(), ppm: 500, details: "Evening cooking simulation." }
+    ];
+
+    dummyLogs.forEach(log => push(historyRef, log));
+    Alert.alert("Test Data Injected! 💉", "Switch between Daily and Weekly to see the chart update.");
+  };
+
+    const hasData = chartData.some(value => value > 0);
     return (
       <View style={{ marginBottom: 20 }}>
-        <Text style={styles.screenTitle}>ANALYTICS</Text>
-
+      <TouchableOpacity onLongPress={injectDummyData} delayLongPress={1500}>
+          <Text style={styles.screenTitle}>ANALYTICS</Text>
+      </TouchableOpacity>
         <View style={styles.tabContainer}>
           <TouchableOpacity style={[styles.tab, timeframe === 'daily' && styles.tabActive]} onPress={() => setTimeframe('daily')}>
             <Text style={[styles.tabText, timeframe === 'daily' && styles.tabTextActive]}>Daily</Text>
@@ -738,7 +792,7 @@ function HistoryScreen() {
             <Text style={[styles.tabText, timeframe === 'weekly' && styles.tabTextActive]}>Weekly</Text>
           </TouchableOpacity>
         </View>
-
+      
         <View style={{ backgroundColor: 'white', borderRadius: 16, paddingBottom: 10, elevation: 4, shadowColor: THEME.primaryRed, shadowOpacity: 0.1 }}>
          <LineChart
             data={{
@@ -751,20 +805,28 @@ function HistoryScreen() {
                 { data: chartData, color: () => '#D1D5DB', strokeWidth: 4, withDots: true }
               ]
             }}
-            width={Dimensions.get("window").width - 20}
-            height={260}
+            width={Dimensions.get("window").width - 40}
+            height={230}
             fromZero
             withShadow={false}
-            yLabelsOffset={30}
+            yLabelsOffset={15}
             withOuterLines={false} 
             segments={4} 
-            onDataPointClick={({ value, index }) => {
-              if (value === 1200 && value !== chartData[index]) return; 
-              
-              const timeLabel = currentLabels[index];
-              let status = value >= 1000 ? "⚠️ DANGER (Leak)" : value >= 250 ? "🔥 IN USE (Cooking)" : "✅ SAFE";
-              Alert.alert(`${timeLabel} Analytics`, `Highest Level: ${value} PPM\nStatus: ${status}`);
-            }}
+            onDataPointClick={({ index }) => {
+            // 1. Grab the ACTUAL value from your data array using the tapped column's index
+            const actualValue = chartData[index];
+            
+            // 2. Grab the label (e.g., "Mon" or "12 PM")
+            const timeLabel = currentLabels[index];
+            
+            // 3. Determine the status based on the actual value
+            let status = actualValue >= 1000 ? "⚠️ DANGER (Leak)" : 
+                        actualValue >= 250 ? "🔥 IN USE (Cooking)" : 
+                        "✅ SAFE";
+            
+            // 4. Trigger the alert
+            Alert.alert(`${timeLabel} Analytics`, `Highest Level: ${actualValue} PPM\nStatus: ${status}`);
+          }}
             chartConfig={{
               backgroundColor: "#fff",
               backgroundGradientFrom: "#fff",
@@ -785,8 +847,26 @@ function HistoryScreen() {
               }
             }}
             bezier
-            style={{ borderRadius: 16, marginTop: 10, paddingRight: 60, paddingLeft: 40 }}
+            style={{ borderRadius: 16, marginTop: 10}}
           />
+
+          {/* --- NEW: The "No Data" Overlay --- */}
+          {!hasData && (
+            <View style={{
+              position: 'absolute',
+              top: 0, left: 0, right: 0, bottom: 45, // Leaves the legend visible at the bottom
+              backgroundColor: 'rgba(255, 255, 255, 0.85)', // Semi-transparent cream color
+              justifyContent: 'center',
+              alignItems: 'center',
+              zIndex: 10,
+            }}>
+              <Feather name="bar-chart-2" size={32} color="#CCC" style={{ marginBottom: 8 }} />
+              <Text style={{ fontFamily: 'Poppins_600SemiBold', color: '#999', fontSize: 13 }}>
+                {timeframe === 'daily' ? "No data recorded today" : "No data recorded this week"}
+              </Text>
+            </View>
+          )}
+
           <View style={styles.legendContainer}>
             <View style={styles.legendItem}><View style={[styles.legendDot, { backgroundColor: THEME.safeGreen }]} /><Text style={styles.legendText}>Safe</Text></View>
             <View style={styles.legendItem}><View style={[styles.legendDot, { backgroundColor: THEME.cookingOrange }]} /><Text style={styles.legendText}>In Use</Text></View>
@@ -794,6 +874,7 @@ function HistoryScreen() {
           </View>
         </View>
         <Text style={styles.sectionHeader}>RECENT ACTIVITY</Text>
+        <Text style={{fontSize: 10, color: '#999', marginBottom:5, textAlign:'center'}}>Slide Left to Delete</Text>
       </View>
     );
   };
@@ -881,7 +962,6 @@ function EmergencyScreen() {
     const closeAndResetModal = () => { setAddModalVisible(false); setEditingMemberId(null); setNewName(''); setNewPhone(''); setNewRole(''); setErrors({ name: false, phone: false, role: false }); };
 
    const renderRightActions = (id: string) => (
-        // Added paddingBottom: 10
         <View style={{ width: 85, paddingBottom: 10 }}> 
             <TouchableOpacity onPress={() => handleDeleteMember(id)} style={styles.deleteAction}>
                 <Feather name="trash-2" size={24} color="white" />
@@ -891,8 +971,8 @@ function EmergencyScreen() {
     );
 
     const renderLeftActions = (member: any) => (
-        // Added paddingBottom: 10
-        <View style={{ width: 85, paddingBottom: 10 }}> 
+
+<View style={{ width: 85, paddingBottom: 10 }}> 
             <TouchableOpacity onPress={() => openEditModal(member)} style={styles.editAction}>
                 <Feather name="edit" size={24} color="white" />
                 <Text style={{color:'white', fontWeight:'bold', fontSize: 10, marginTop: 4}}>Edit</Text>
@@ -1356,8 +1436,8 @@ function SettingsScreen() {
 
                             <View style={{backgroundColor: '#f5f5f5', borderRadius: 12, padding: 14, marginBottom: 30}}>
                                 <Text style={{fontSize: 14, fontFamily: 'Poppins_700Bold', color: THEME.darkGray, marginBottom: 8}}>Safety Thresholds</Text>
-                                <Text style={{fontSize: 12, color: '#555', marginBottom: 4, fontFamily: 'Poppins_400Regular'}}>0-200 PPM: Clean Air ✅</Text>
-                                <Text style={{fontSize: 12, color: '#555', marginBottom: 4, fontFamily: 'Poppins_400Regular'}}>200-1000 PPM: In Use 🔥</Text>
+                                <Text style={{fontSize: 12, color: '#555', marginBottom: 4, fontFamily: 'Poppins_400Regular'}}>0-250 PPM: Clean Air ✅</Text>
+                                <Text style={{fontSize: 12, color: '#555', marginBottom: 4, fontFamily: 'Poppins_400Regular'}}>250-1000 PPM: In Use 🔥</Text>
                                 <Text style={{fontSize: 12, color: '#555', fontFamily: 'Poppins_400Regular'}}>1000+ PPM: Danger Zone ⚠️</Text>
                             </View>
 
